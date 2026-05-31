@@ -1,13 +1,11 @@
 import { createRoute, z } from "@hono/zod-openapi";
+
 import {
   ApartmentSchema,
-  CreateApartmentSchema,
   ApartmentsListSchema,
+  CreateApartmentSchema,
 } from "./apartments.schema";
 
-/**
- * GET /apartments
- */
 export const getApartmentsRoute = createRoute({
   method: "get",
   path: "/",
@@ -25,20 +23,16 @@ export const getApartmentsRoute = createRoute({
   },
 });
 
-/**
- * GET /apartments/:id
- */
 export const getApartmentByIdRoute = createRoute({
   method: "get",
   path: "/{id}",
+  tags: ["Apartments"],
 
   request: {
     params: z.object({
-      id: z.string(),
+      id: z.string().uuid(),
     }),
   },
-
-  tags: ["Apartments"],
 
   responses: {
     200: {
@@ -49,8 +43,9 @@ export const getApartmentByIdRoute = createRoute({
         },
       },
     },
+
     404: {
-      description: "Not found",
+      description: "Apartment not found",
       content: {
         "application/json": {
           schema: z.object({
@@ -62,9 +57,6 @@ export const getApartmentByIdRoute = createRoute({
   },
 });
 
-/**
- * POST /apartments
- */
 export const createApartmentRoute = createRoute({
   method: "post",
   path: "/",
@@ -82,7 +74,7 @@ export const createApartmentRoute = createRoute({
 
   responses: {
     201: {
-      description: "Created apartment",
+      description: "Apartment created",
       content: {
         "application/json": {
           schema: ApartmentSchema,

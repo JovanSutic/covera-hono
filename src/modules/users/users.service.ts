@@ -1,16 +1,20 @@
-import type { User } from "./users.types";
+import type { User } from "@/db";
 
 const users: User[] = [
   {
     id: "usr_1",
+    name: "dde",
     email: "admin@example.com",
     roles: ["admin"],
+    createdAt: new Date(),
   },
 
   {
     id: "usr_2",
+    name: "dde",
     email: "host@example.com",
     roles: ["host"],
+    createdAt: new Date(),
   },
 ];
 
