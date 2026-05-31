@@ -1,34 +1,34 @@
-import type { Apartment, CreateApartmentInput } from "./apartments.types";
+import { eq } from "drizzle-orm";
 
-const apartments: Apartment[] = [
-  {
-    id: "apt_1",
-    ownerId: "usr_2",
-    title: "Rome Center Apartment",
-    description: "Nice place in the center",
-    address: "Via Roma 10",
-    createdAt: new Date(),
-  },
-];
+import {
+  db,
+  apartments,
+  type Apartment,
+  type NewApartment,
+} from "@/db";
 
 export const apartmentsService = {
-  getAll(): Apartment[] {
-    return apartments;
+  async getAll(): Promise<Apartment[]> {
+    return db.select().from(apartments);
   },
 
-  getById(id: string): Apartment | undefined {
-    return apartments.find((a) => a.id === id);
+  async getById(id: string): Promise<Apartment | null> {
+    const [apartment] = await db
+      .select()
+      .from(apartments)
+      .where(eq(apartments.id, id));
+
+    return apartment ?? null;
   },
 
-  create(ownerId: string, input: CreateApartmentInput): Apartment {
-    const newApartment: Apartment = {
-      id: `apt_${Date.now()}`,
-      ownerId,
-      createdAt: new Date(),
-      ...input,
-    };
+  async create(
+    apartment: NewApartment,
+  ): Promise<Apartment> {
+    const [createdApartment] = await db
+      .insert(apartments)
+      .values(apartment)
+      .returning();
 
-    apartments.push(newApartment);
-    return newApartment;
+    return createdApartment;
   },
 };

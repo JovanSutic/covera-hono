@@ -1,4 +1,5 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
+
 import {
   getApartmentsRoute,
   getApartmentByIdRoute,
@@ -9,14 +10,16 @@ import { apartmentsService } from "./apartments.service";
 
 const app = new OpenAPIHono();
 
-app.openapi(getApartmentsRoute, (c) => {
-  return c.json(apartmentsService.getAll());
+app.openapi(getApartmentsRoute, async (c) => {
+  const apartments = await apartmentsService.getAll();
+
+  return c.json(apartments, 200);
 });
 
-app.openapi(getApartmentByIdRoute, (c) => {
+app.openapi(getApartmentByIdRoute, async (c) => {
   const { id } = c.req.valid("param");
 
-  const apartment = apartmentsService.getById(id);
+  const apartment = await apartmentsService.getById(id);
 
   if (!apartment) {
     return c.json({ message: "Not found" }, 404);
@@ -25,13 +28,11 @@ app.openapi(getApartmentByIdRoute, (c) => {
   return c.json(apartment, 200);
 });
 
-app.openapi(createApartmentRoute, (c) => {
+app.openapi(createApartmentRoute, async (c) => {
   const body = c.req.valid("json");
 
-  // later: get from auth middleware
-  const ownerId = "usr_2";
-
-  const apartment = apartmentsService.create(ownerId, body);
+  const apartment =
+    await apartmentsService.create(body);
 
   return c.json(apartment, 201);
 });
