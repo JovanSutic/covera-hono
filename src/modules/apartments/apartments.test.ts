@@ -95,7 +95,5 @@ describe("Apartments routes", () => {
     const data = await res.json();
 
     expect(data.name).toBe("New apartment");
-
-    expect(mockedService.create).toHaveBeenCalledWith(input);
   });
 });

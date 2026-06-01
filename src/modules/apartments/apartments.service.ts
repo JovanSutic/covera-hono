@@ -1,18 +1,18 @@
 import { eq } from "drizzle-orm";
 
 import {
-  db,
   apartments,
   type Apartment,
   type NewApartment,
 } from "@/db";
+import { Variables } from "@/types";
 
 export const apartmentsService = {
-  async getAll(): Promise<Apartment[]> {
+  async getAll(db: Variables["db"]): Promise<Apartment[]> {
     return db.select().from(apartments);
   },
 
-  async getById(id: string): Promise<Apartment | null> {
+  async getById(db: Variables["db"], id: string): Promise<Apartment | null> {
     const [apartment] = await db
       .select()
       .from(apartments)
@@ -22,7 +22,8 @@ export const apartmentsService = {
   },
 
   async create(
-    apartment: NewApartment,
+    db: Variables["db"],
+    apartment: NewApartment
   ): Promise<Apartment> {
     const [createdApartment] = await db
       .insert(apartments)
