@@ -1,28 +1,17 @@
 import type { Location, NewLocation } from "@/db";
-
-const locations: Location[] = [
-  {
-    id: "loc_1",
-    name: "Rome",
-    country: "Italy",
-    type: "city",
-    createdAt: new Date(),
-  },
-];
+import { locations } from "@/db/schema";
 
 export const locationsService = {
-  async getAll(): Promise<Location[]> {
-    return locations;
+  async getAll(db: any): Promise<Location[]> {
+    return db.select().from(locations);
   },
 
-  async create(input: NewLocation): Promise<Location> {
-    const newLocation: Location = {
-      id: `loc_${Date.now()}`,
-      createdAt: new Date(),
-      ...input,
-    };
+  async create(db: any, input: NewLocation): Promise<Location> {
+    const [created] = await db
+      .insert(locations)
+      .values(input)
+      .returning();
 
-    locations.push(newLocation);
-    return newLocation;
+    return created;
   },
 };
