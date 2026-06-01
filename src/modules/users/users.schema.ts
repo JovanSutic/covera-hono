@@ -1,11 +1,12 @@
 import { z } from "@hono/zod-openapi";
 
-import {
-  SelectUserSchema,
-} from "@/db";
+import { SelectUserSchema, InsertUserSchema } from "@/db";
 
-export const UserSchema =
-  SelectUserSchema.openapi("User");
+export const UserSchema = SelectUserSchema.openapi("User");
 
-export const GetUsersResponseSchema =
-  z.array(UserSchema);
+export const GetUsersResponseSchema = z.array(UserSchema);
+
+export const CreateUserSchema = InsertUserSchema.omit({
+  id: true,
+  createdAt: true,
+}).openapi("CreateLocation");

@@ -1,29 +1,29 @@
-import type { User } from "@/db";
+import { eq } from "drizzle-orm";
 
-const users: User[] = [
-  {
-    id: "usr_1",
-    name: "dde",
-    email: "admin@example.com",
-    roles: ["admin"],
-    createdAt: new Date(),
-  },
-
-  {
-    id: "usr_2",
-    name: "dde",
-    email: "host@example.com",
-    roles: ["host"],
-    createdAt: new Date(),
-  },
-];
+import type { User, NewUser } from "@/db";
+import { users } from "@/db/schema";
+import { Variables } from "@/types";
 
 export const usersService = {
-  getAll(): User[] {
-    return users;
+  async getAll(db: Variables["db"]): Promise<User[]> {
+    return db.select().from(users);
   },
 
-  getById(id: string): User | undefined {
-    return users.find((user) => user.id === id);
+  async getById(db: Variables["db"], id: string): Promise<User | null> {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, id));
+
+    return user ?? null;
+  },
+
+  async create(db: Variables["db"], input: NewUser): Promise<User> {
+    const [created] = await db
+      .insert(users)
+      .values(input)
+      .returning();
+
+    return created;
   },
 };

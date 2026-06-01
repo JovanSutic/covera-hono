@@ -1,5 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { GetUsersResponseSchema, UserSchema } from "./users.schema";
+import { GetUsersResponseSchema, UserSchema, CreateUserSchema } from "./users.schema";
 
 export const getUsersRoute = createRoute({
   method: "get",
@@ -44,6 +44,33 @@ export const getUserByIdRoute = createRoute({
 
     404: {
       description: "User not found",
+    },
+  },
+});
+
+export const createUserRoute = createRoute({
+  method: "post",
+  path: "/",
+  tags: ["Users"],
+
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: CreateUserSchema,
+        },
+      },
+    },
+  },
+
+  responses: {
+    201: {
+      description: "User created",
+      content: {
+        "application/json": {
+          schema: UserSchema,
+        },
+      },
     },
   },
 });
