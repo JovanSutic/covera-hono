@@ -28,8 +28,11 @@ describe("Users routes", () => {
     mockedService.getAll.mockReturnValue([
       {
         id: VALID_UUID,
-        name: "John Doe",
         email: "john@example.com",
+        firstName: "John",
+        lastName: "Doe",
+        roles: ["guest"],
+        status: "created",
         createdAt: new Date().toISOString(),
       },
     ]);
@@ -43,14 +46,17 @@ describe("Users routes", () => {
     expect(Array.isArray(data)).toBe(true);
     expect(data.length).toBe(1);
     expect(data[0].id).toBe(VALID_UUID);
-    expect(data[0].name).toBe("John Doe");
+    expect(data[0].email).toBe("john@example.com");
   });
 
   it("GET /users/:id should return single user", async () => {
     mockedService.getById.mockReturnValue({
       id: VALID_UUID,
-      name: "John Doe",
       email: "john@example.com",
+      firstName: "John",
+      lastName: "Doe",
+      roles: ["guest"],
+      status: "created",
       createdAt: new Date().toISOString(),
     });
 
@@ -61,13 +67,14 @@ describe("Users routes", () => {
     const data = await res.json();
 
     expect(data.id).toBe(VALID_UUID);
-    expect(data.name).toBe("John Doe");
+    expect(data.email).toBe("john@example.com");
+    expect(data.firstName).toBe("John");
   });
 
   it("GET /users/:id should return 404", async () => {
     mockedService.getById.mockReturnValue(null);
 
-    const res = await app.request("/users/unknown");
+    const res = await app.request(`/users/${VALID_UUID}`);
 
     expect(res.status).toBe(404);
 
@@ -78,13 +85,17 @@ describe("Users routes", () => {
 
   it("POST /users should create a user", async () => {
     const input = {
-      name: "John Doe",
       email: "john@example.com",
+      firstName: "John",
+      lastName: "Doe",
+      role: "guest",
     };
 
     mockedService.create.mockReturnValue({
       id: VALID_UUID,
       ...input,
+      roles: [input.role],
+      status: "created",
       createdAt: new Date().toISOString(),
     });
 
@@ -101,7 +112,9 @@ describe("Users routes", () => {
     const data = await res.json();
 
     expect(data.id).toBe(VALID_UUID);
-    expect(data.name).toBe("John Doe");
     expect(data.email).toBe("john@example.com");
+    expect(data.firstName).toBe("John");
+    expect(data.lastName).toBe("Doe");
+    expect(data.roles).toContain("guest");
   });
 });

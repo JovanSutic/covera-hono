@@ -6,11 +6,13 @@ import reservationsRoutes from "./modules/reservations/reservations.route";
 import locationsRoutes from "./modules/locations/locations.route";
 import { dbMiddleware } from "./middleware/db";
 import { App } from "./types";
+import { supabaseMiddleware } from "./middleware/supabase";
 
 const app = new OpenAPIHono<App>();
 
 if (process.env.NODE_ENV !== "test") {
   app.use("*", dbMiddleware);
+  app.use("*", supabaseMiddleware);
 }
 
 app.route("/users", usersRoutes);

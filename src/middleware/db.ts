@@ -1,13 +1,18 @@
 import { createMiddleware } from "hono/factory";
-
+import { env } from "hono/adapter";
+import { App } from "@/types";
 import { createDb } from "@/db/client";
 
-export const dbMiddleware = createMiddleware(
-  async (c, next) => {
-    const db = createDb(c.env.DATABASE_URL);
+export const dbMiddleware = createMiddleware(async (c, next) => {
+  const runtimeEnv = env<App["Bindings"]>(c);
+  const databaseUrl = runtimeEnv.DATABASE_URL;
 
-    c.set("db", db);
+  if (!databaseUrl) {
+    throw new Error("Missing DATABASE_URL environment variable.");
+  }
+  const db = createDb(databaseUrl);
 
-    await next();
-  },
-);
+  c.set("db", db);
+
+  await next();
+});
