@@ -33,9 +33,15 @@ app.openapi(getUserByIdRoute, async (c) => {
 
 app.openapi(createUserRoute, async (c) => {
   const db = c.get("db");
+  const supabase = c.get("supabase");
+
   const body = c.req.valid("json");
 
-  const user = await usersService.create(db, body);
+  const user = await usersService.create(
+    db,
+    supabase,
+    body,
+  );
 
   return c.json(user, 201);
 });

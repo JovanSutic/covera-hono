@@ -26,6 +26,8 @@ jobs:
         env:
           NODE_ENV: test
           DATABASE_URL: "postgresql://test:test@localhost:5432/test"
+          SUPABASE_URL: "https://supabase.co"
+          SUPABASE_SERVICE_ROLE_KEY: "mock-key"
 
       - name: Deploy to Cloudflare
         run: npx wrangler deploy
