@@ -105,3 +105,26 @@ export const createUserRoute = createRoute({
     },
   },
 });
+
+export const inviteUserRoute = createRoute({
+  method: "post",
+  path: "/:id/invite",
+  tags: ["Users"],
+  request: { params: z.object({ id: z.string().uuid() }) },
+  responses: {
+    200: {
+      description: "Invitation link generated and dispatched successfully",
+      content: {
+        "application/json": {
+          schema: z.object({
+            success: z.boolean(),
+            message: z.string(),
+          }),
+        },
+      },
+    },
+    404: { description: "User profile not found inside relational database" },
+    400: { description: "Failed to generate security token wrapper link" },
+  },
+});
+
