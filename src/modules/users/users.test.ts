@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { usersService } from "../../modules/users/users.service";
 import app from "../../index";
 
 vi.mock("../../modules/users/users.service", () => ({
@@ -6,15 +7,15 @@ vi.mock("../../modules/users/users.service", () => ({
     getAll: vi.fn(),
     getById: vi.fn(),
     create: vi.fn(),
+    invite: vi.fn(),
   },
 }));
-
-import { usersService } from "../../modules/users/users.service";
 
 const mockedService = usersService as unknown as {
   getAll: ReturnType<typeof vi.fn>;
   getById: ReturnType<typeof vi.fn>;
   create: ReturnType<typeof vi.fn>;
+  invite: ReturnType<typeof vi.fn>;
 };
 
 const VALID_UUID = "550e8400-e29b-41d4-a716-446655440000";
@@ -38,11 +39,8 @@ describe("Users routes", () => {
     ]);
 
     const res = await app.request("/users");
-
     expect(res.status).toBe(200);
-
     const data = await res.json();
-
     expect(Array.isArray(data)).toBe(true);
     expect(data.length).toBe(1);
     expect(data[0].id).toBe(VALID_UUID);
@@ -61,11 +59,8 @@ describe("Users routes", () => {
     });
 
     const res = await app.request(`/users/${VALID_UUID}`);
-
     expect(res.status).toBe(200);
-
     const data = await res.json();
-
     expect(data.id).toBe(VALID_UUID);
     expect(data.email).toBe("john@example.com");
     expect(data.firstName).toBe("John");
@@ -75,11 +70,8 @@ describe("Users routes", () => {
     mockedService.getById.mockReturnValue(null);
 
     const res = await app.request(`/users/${VALID_UUID}`);
-
     expect(res.status).toBe(404);
-
     const data = await res.json();
-
     expect(data.message).toBe("User not found");
   });
 
@@ -108,13 +100,52 @@ describe("Users routes", () => {
     });
 
     expect(res.status).toBe(201);
-
     const data = await res.json();
-
     expect(data.id).toBe(VALID_UUID);
     expect(data.email).toBe("john@example.com");
     expect(data.firstName).toBe("John");
     expect(data.lastName).toBe("Doe");
     expect(data.roles).toContain("guest");
+  });
+
+  it("POST /users/:id/invite should dispatch invitation successfully", async () => {
+    mockedService.invite.mockReturnValue({
+      success: true,
+    });
+
+    const res = await app.request(`/users/${VALID_UUID}/invite`, {
+      method: "POST",
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(data.message).toBe("Invitation link generated and dispatched.");
+  });
+
+  it("POST /users/:id/invite should return 404 if user profile does not exist", async () => {
+    mockedService.invite.mockReturnValue(null);
+
+    const res = await app.request(`/users/${VALID_UUID}/invite`, {
+      method: "POST",
+    });
+
+    expect(res.status).toBe(404);
+    const data = await res.json();
+    expect(data.message).toBe("User not found");
+  });
+
+  it("POST /users/:id/invite should return 400 if service execution fails", async () => {
+    mockedService.invite.mockRejectedValue(
+      new Error("Failed to trigger automated invitation email"),
+    );
+
+    const res = await app.request(`/users/${VALID_UUID}/invite`, {
+      method: "POST",
+    });
+
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.message).toBe("Failed to trigger automated invitation email");
   });
 });
