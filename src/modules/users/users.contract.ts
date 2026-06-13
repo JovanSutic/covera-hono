@@ -3,13 +3,18 @@ import {
   GetUsersResponseSchema,
   UserSchema,
   CreateUserSchema,
+  UpdatePasswordSchema,
+  UpdatePasswordResponseSchema,
+  ErrorResponseSchema,
 } from "./users.schema";
+import { authGuard } from "@/middleware/authGuard";
+import { rolesGuard } from "@/middleware/roleGuard";
 
 export const getUsersRoute = createRoute({
   method: "get",
   path: "/",
   tags: ["Users"],
-
+  middleware: [authGuard, rolesGuard(["admin"])] as const,
   responses: {
     200: {
       description: "Get all users",
@@ -128,3 +133,44 @@ export const inviteUserRoute = createRoute({
   },
 });
 
+export const updatePasswordRoute = createRoute({
+  method: "post",
+  path: "/update-password",
+  middleware: [authGuard] as const,
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: UpdatePasswordSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Password changed and synchronization status completed.",
+      content: {
+        "application/json": {
+          schema: UpdatePasswordResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Bad Request: Passwords mismatch or schema payload issues.",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+    401: {
+      description:
+        "Unauthorized: Invalid, expired, or missing header bearer token.",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+    },
+  },
+});

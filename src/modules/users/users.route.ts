@@ -4,6 +4,7 @@ import {
   getUserByIdRoute,
   createUserRoute,
   inviteUserRoute,
+  updatePasswordRoute,
 } from "./users.contract";
 
 import { usersService } from "./users.service";
@@ -69,5 +70,33 @@ app.openapi(inviteUserRoute, async (c) => {
     );
   }
 });
+
+app.openapi(updatePasswordRoute, async (c) => {
+  const db = c.get("db");
+  const authUser = c.get("authUser");
+  const supabase = c.get("supabase");
+  const { password } = c.req.valid("json");
+
+  if (!authUser) {
+    return c.json({ message: "Unauthorized" }, 401);
+  }
+
+  const { error: authError } = await supabase.auth.admin.updateUserById(
+    authUser.id, 
+    { password: password }
+  );
+
+  if (authError) {
+    return c.json({ message: authError.message }, 400);
+  }
+
+  await usersService.updateStatusByAuthId(db, authUser.id, "confirmed");
+
+  return c.json({
+    success: true,
+    message: "Password updated successfully.",
+  }, 200);
+});
+
 
 export default app;
