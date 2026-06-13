@@ -78,7 +78,7 @@ export const usersService = {
     const { data, error } = await supabase.auth.admin.inviteUserByEmail(
       userRecord.email,
       {
-        redirectTo: "http://localhost:5173/update-password",
+        redirectTo: "https://covera.josutic-sutic.workers.dev/update-password",
       },
     );
 
@@ -91,5 +91,19 @@ export const usersService = {
     await db.update(users).set({ status: "invited" }).where(eq(users.id, id));
 
     return { success: true };
+  },
+
+  async updateStatusByAuthId(
+    db: Variables["db"],
+    authId: string,
+    status: "created" | "invited" | "confirmed" | "disabled",
+  ): Promise<User | null> {
+    const [updated] = await db
+      .update(users)
+      .set({ status })
+      .where(eq(users.authId, authId))
+      .returning();
+
+    return updated ?? null;
   },
 };
