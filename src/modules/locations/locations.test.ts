@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import app from "../../index";
+import { createTestApp } from "@/core/utils/test-factory"; 
+import locationsApp from "./locations.route"; 
+import { locationsService } from "../../modules/locations/locations.service";
+import { usersService } from "../../modules/users/users.service";
 
 vi.mock("../../modules/locations/locations.service", () => ({
   locationsService: {
@@ -8,22 +11,56 @@ vi.mock("../../modules/locations/locations.service", () => ({
   },
 }));
 
-import { locationsService } from "../../modules/locations/locations.service";
+vi.mock("../../modules/users/users.service", () => ({
+  usersService: {
+    getByAuthId: vi.fn(),
+  },
+}));
 
-const mockedService = locationsService as unknown as {
+const mockedLocationService = locationsService as unknown as {
   getAll: ReturnType<typeof vi.fn>;
   create: ReturnType<typeof vi.fn>;
 };
 
+const mockedUserService = usersService as unknown as {
+  getByAuthId: ReturnType<typeof vi.fn>;
+};
+
+const mockGetUser = vi.fn();
+
 const VALID_UUID = "550e8400-e29b-41d4-a716-446655440000";
+const MOCK_JWT = "Bearer validation-mock-token-string";
+
+const testApp = createTestApp({
+  contextOverrides: () => ({
+    getUser: mockGetUser,
+  }),
+});
+
+testApp.route("/locations", locationsApp);
 
 describe("Locations routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("GET /locations", async () => {
-    mockedService.getAll.mockReturnValue([
+  const setupSuccessfulGuards = () => {
+    mockGetUser.mockResolvedValue({
+      data: { user: { id: VALID_UUID, email: "admin@example.com" } },
+      error: null,
+    });
+    mockedUserService.getByAuthId.mockResolvedValue({
+      id: VALID_UUID,
+      authId: VALID_UUID,
+      role: "admin",
+      status: "confirmed",
+    });
+  };
+
+  it("GET /locations should return all locations when authenticated as admin", async () => {
+    setupSuccessfulGuards();
+    
+    mockedLocationService.getAll.mockReturnValue([
       {
         id: VALID_UUID,
         name: "Rome",
@@ -33,7 +70,9 @@ describe("Locations routes", () => {
       },
     ]);
 
-    const res = await app.request("/locations");
+    const res = await testApp.request("/locations", {
+      headers: { Authorization: MOCK_JWT },
+    });
 
     expect(res.status).toBe(200);
 
@@ -45,23 +84,55 @@ describe("Locations routes", () => {
     expect(data[0].name).toBe("Rome");
   });
 
-  it("POST /locations", async () => {
+  it("GET /locations should return 401 if token is missing", async () => {
+    mockGetUser.mockResolvedValue({
+      data: { user: null },
+      error: new Error("Missing token"),
+    });
+
+    const res = await testApp.request("/locations");
+    expect(res.status).toBe(401);
+  });
+
+  it("GET /locations should return 403 if user lacks admin permissions", async () => {
+    mockGetUser.mockResolvedValue({
+      data: { user: { id: VALID_UUID } },
+      error: null,
+    });
+
+    mockedUserService.getByAuthId.mockResolvedValue({
+      id: VALID_UUID,
+      authId: VALID_UUID,
+      role: "guest",
+      status: "confirmed",
+    });
+
+    const res = await testApp.request("/locations", {
+      headers: { Authorization: MOCK_JWT },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /locations should create a new location", async () => {
+    setupSuccessfulGuards();
+
     const input = {
       name: "Rome",
       country: "Italy",
       type: "city",
     };
 
-    mockedService.create.mockReturnValue({
+    mockedLocationService.create.mockReturnValue({
       id: VALID_UUID,
       ...input,
       createdAt: new Date().toISOString(),
     });
 
-    const res = await app.request("/locations", {
+    const res = await testApp.request("/locations", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: MOCK_JWT,
       },
       body: JSON.stringify(input),
     });

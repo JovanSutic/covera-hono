@@ -1,10 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { OpenAPIHono } from "@hono/zod-openapi";
 import { usersService } from "../../modules/users/users.service";
-import usersApp from "./users.route"; // <-- IMPORT YOUR RAW ROUTER INSTEAD OF THE MAIN INDEX APP
-import { App } from "@/types";
+import usersApp from "./users.route";
+import { createTestApp } from "@/core/utils/test-factory";
 
-// 1. Centralized, reliable mocks for your services
 vi.mock("../../modules/users/users.service", () => ({
   usersService: {
     getAll: vi.fn(),
@@ -25,37 +23,19 @@ const mockedService = usersService as unknown as {
   updateStatusByAuthId: ReturnType<typeof vi.fn>;
 };
 
-// 2. Clear spy targets for the Supabase service layer
 const mockGetUser = vi.fn();
 const mockUpdateUserById = vi.fn();
 
 const VALID_UUID = "550e8400-e29b-41d4-a716-446655440000";
 const MOCK_JWT = "Bearer validation-mock-token-string";
 
-// 3. Create a clean, isolated Test App instance
-const testApp = new OpenAPIHono<App>({
-  defaultHook: (result, c) => {
-    if (!result.success) {
-      return c.json({ message: "Validation Error" }, 400); // <-- Enforces the 400 Bad Request
-    }
-  },
+const testApp = createTestApp({
+  contextOverrides: () => ({
+    getUser: mockGetUser,
+    updateUserById: mockUpdateUserById,
+  }),
 });
 
-// Inject perfect, mock dependencies directly into the context variables before routing
-testApp.use("*", async (c, next) => {
-  c.set("db", {} as any);
-  c.set("supabase", {
-    auth: {
-      getUser: mockGetUser,
-      admin: {
-        updateUserById: mockUpdateUserById,
-      },
-    },
-  } as any);
-  await next();
-});
-
-// Mount your sub-router on a clean base path prefix
 testApp.route("/users", usersApp);
 
 describe("Users routes", () => {
@@ -78,7 +58,7 @@ describe("Users routes", () => {
 
   it("GET /users should return all users when authenticated as admin", async () => {
     setupSuccessfulGuards();
-    
+
     mockedService.getAll.mockReturnValue([
       {
         id: VALID_UUID,
@@ -94,7 +74,7 @@ describe("Users routes", () => {
     const res = await testApp.request("/users", {
       headers: { Authorization: MOCK_JWT },
     });
-    
+
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(Array.isArray(data)).toBe(true);
@@ -102,8 +82,11 @@ describe("Users routes", () => {
   });
 
   it("GET /users should return 401 if token is missing", async () => {
-    mockGetUser.mockResolvedValue({ data: { user: null }, error: new Error("Missing token") });
-    
+    mockGetUser.mockResolvedValue({
+      data: { user: null },
+      error: new Error("Missing token"),
+    });
+
     const res = await testApp.request("/users");
     expect(res.status).toBe(401);
   });
@@ -117,7 +100,7 @@ describe("Users routes", () => {
     mockedService.getByAuthId.mockResolvedValue({
       id: VALID_UUID,
       authId: VALID_UUID,
-      role: "guest", 
+      role: "guest",
       status: "confirmed",
     });
 
@@ -205,9 +188,12 @@ describe("Users routes", () => {
 
   it("POST /update-password should change credentials and return 200", async () => {
     setupSuccessfulGuards();
-    
+
     mockUpdateUserById.mockResolvedValue({ data: {}, error: null });
-    mockedService.updateStatusByAuthId.mockResolvedValue({ id: VALID_UUID, status: "confirmed" });
+    mockedService.updateStatusByAuthId.mockResolvedValue({
+      id: VALID_UUID,
+      status: "confirmed",
+    });
 
     const payload = {
       password: "StrongPassword123!",
