@@ -5,12 +5,17 @@ import {
   ApartmentsListSchema,
   CreateApartmentSchema,
 } from "./apartments.schema";
+import { authGuard } from "@/middleware/authGuard";
+import { rolesGuard } from "@/middleware/roleGuard";
+import { commonErrors } from "@/core/errors/error.helpers";
+
+const apartmentErrors = commonErrors.getStandardResponses("Apartment");
 
 export const getApartmentsRoute = createRoute({
   method: "get",
   path: "/",
   tags: ["Apartments"],
-
+  middleware: [authGuard] as const,
   responses: {
     200: {
       description: "List apartments",
@@ -20,6 +25,7 @@ export const getApartmentsRoute = createRoute({
         },
       },
     },
+    ...apartmentErrors,
   },
 });
 
@@ -27,7 +33,7 @@ export const getApartmentByIdRoute = createRoute({
   method: "get",
   path: "/{id}",
   tags: ["Apartments"],
-
+  middleware: [authGuard] as const,
   request: {
     params: z.object({
       id: z.string().uuid(),
@@ -43,17 +49,7 @@ export const getApartmentByIdRoute = createRoute({
         },
       },
     },
-
-    404: {
-      description: "Apartment not found",
-      content: {
-        "application/json": {
-          schema: z.object({
-            message: z.string(),
-          }),
-        },
-      },
-    },
+    ...apartmentErrors,
   },
 });
 
@@ -61,7 +57,7 @@ export const createApartmentRoute = createRoute({
   method: "post",
   path: "/",
   tags: ["Apartments"],
-
+  middleware: [authGuard, rolesGuard(["admin"])] as const,
   request: {
     body: {
       content: {
@@ -81,5 +77,6 @@ export const createApartmentRoute = createRoute({
         },
       },
     },
+    ...apartmentErrors,
   },
 });

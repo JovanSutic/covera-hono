@@ -7,8 +7,57 @@ import locationsRoutes from "./modules/locations/locations.route";
 import { dbMiddleware } from "./middleware/db";
 import { App } from "./types";
 import { supabaseMiddleware } from "./middleware/supabase";
+import { CustomException } from "./core/errors/error.exceptions";
 
-const app = new OpenAPIHono<App>();
+const app = new OpenAPIHono<App>({
+  defaultHook: (result, c) => {
+    if (!result.success) {
+      const formattedDetails = result.error.issues.map((issue) => ({
+        field: issue.path.join("."),
+        message: issue.message,
+      }));
+
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "The request parameters failed validation tests.",
+            details: formattedDetails,
+          },
+        },
+        400,
+      );
+    }
+  },
+});
+
+app.onError((err, c) => {
+  if (err instanceof CustomException) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: err.code,
+          message: err.message,
+        },
+      },
+      err.status,
+    );
+  }
+
+  console.error(`[Unhandled Error]: ${err.message}`, err.stack);
+  return c.json(
+    {
+      success: false,
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Something went wrong on our end.",
+      },
+    },
+    500,
+  );
+});
 
 if (process.env.NODE_ENV !== "test") {
   app.use("*", dbMiddleware);

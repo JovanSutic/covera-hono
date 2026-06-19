@@ -5,10 +5,12 @@ import {
   CreateUserSchema,
   UpdatePasswordSchema,
   UpdatePasswordResponseSchema,
-  ErrorResponseSchema,
 } from "./users.schema";
 import { authGuard } from "@/middleware/authGuard";
 import { rolesGuard } from "@/middleware/roleGuard";
+import { commonErrors } from "@/core/errors/error.helpers";
+
+const userErrors = commonErrors.getStandardResponses("User");
 
 export const getUsersRoute = createRoute({
   method: "get",
@@ -24,6 +26,7 @@ export const getUsersRoute = createRoute({
           schema: GetUsersResponseSchema,
         },
       },
+      ...userErrors,
     },
   },
 });
@@ -31,9 +34,8 @@ export const getUsersRoute = createRoute({
 export const getUserByIdRoute = createRoute({
   method: "get",
   path: "/:id",
-
   tags: ["Users"],
-
+  middleware: [authGuard] as const,
   request: {
     params: z.object({
       id: z.uuid(),
@@ -50,10 +52,7 @@ export const getUserByIdRoute = createRoute({
         },
       },
     },
-
-    404: {
-      description: "User not found",
-    },
+    ...userErrors,
   },
 });
 
@@ -61,7 +60,7 @@ export const getUserByAuthIdRoute = createRoute({
   method: "get",
   path: "/auth/:authId",
   tags: ["Users"],
-
+  middleware: [authGuard] as const,
   request: {
     params: z.object({
       authId: z.uuid(),
@@ -77,10 +76,7 @@ export const getUserByAuthIdRoute = createRoute({
         },
       },
     },
-
-    404: {
-      description: "User not found",
-    },
+    ...userErrors,
   },
 });
 
@@ -88,7 +84,7 @@ export const createUserRoute = createRoute({
   method: "post",
   path: "/",
   tags: ["Users"],
-
+  middleware: [authGuard, rolesGuard(["admin"])] as const,
   request: {
     body: {
       content: {
@@ -108,6 +104,7 @@ export const createUserRoute = createRoute({
         },
       },
     },
+    ...userErrors,
   },
 });
 
@@ -115,6 +112,7 @@ export const inviteUserRoute = createRoute({
   method: "post",
   path: "/:id/invite",
   tags: ["Users"],
+  middleware: [authGuard, rolesGuard(["admin"])] as const,
   request: { params: z.object({ id: z.string().uuid() }) },
   responses: {
     200: {
@@ -128,8 +126,7 @@ export const inviteUserRoute = createRoute({
         },
       },
     },
-    404: { description: "User profile not found inside relational database" },
-    400: { description: "Failed to generate security token wrapper link" },
+    ...userErrors,
   },
 });
 
@@ -155,22 +152,6 @@ export const updatePasswordRoute = createRoute({
         },
       },
     },
-    400: {
-      description: "Bad Request: Passwords mismatch or schema payload issues.",
-      content: {
-        "application/json": {
-          schema: ErrorResponseSchema,
-        },
-      },
-    },
-    401: {
-      description:
-        "Unauthorized: Invalid, expired, or missing header bearer token.",
-      content: {
-        "application/json": {
-          schema: ErrorResponseSchema,
-        },
-      },
-    },
+    ...userErrors,
   },
 });

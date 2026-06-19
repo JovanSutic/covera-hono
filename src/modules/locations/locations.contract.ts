@@ -1,20 +1,17 @@
 import { createRoute } from "@hono/zod-openapi";
-import { z } from "@hono/zod-openapi";
-
 import {
   LocationSchema,
   GetLocationsResponseSchema,
   CreateLocationSchema,
 } from "./locations.schema";
+import { authGuard } from "@/middleware/authGuard";
+import { rolesGuard } from "@/middleware/roleGuard";
 
-/**
- * GET /locations
- */
 export const getLocationsRoute = createRoute({
   method: "get",
   path: "/",
   tags: ["Locations"],
-
+  middleware: [authGuard, rolesGuard(["admin"])] as const,
   responses: {
     200: {
       description: "List locations",
@@ -27,14 +24,11 @@ export const getLocationsRoute = createRoute({
   },
 });
 
-/**
- * POST /locations
- */
 export const createLocationRoute = createRoute({
   method: "post",
   path: "/",
   tags: ["Locations"],
-
+  middleware: [authGuard, rolesGuard(["admin"])] as const,
   request: {
     body: {
       content: {

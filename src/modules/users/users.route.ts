@@ -9,15 +9,19 @@ import {
 
 import { usersService } from "./users.service";
 import { App } from "@/types";
+import {
+  NotFoundException,
+  UnauthorizedException,
+  BadRequestException,
+} from "@/core/errors/error.exceptions";
 
 const app = new OpenAPIHono<App>();
 
 app.openapi(getUsersRoute, async (c) => {
   const db = c.get("db");
-
   const users = await usersService.getAll(db);
 
-  return c.json(users);
+  return c.json(users, 200);
 });
 
 app.openapi(getUserByIdRoute, async (c) => {
@@ -27,16 +31,15 @@ app.openapi(getUserByIdRoute, async (c) => {
   const user = await usersService.getById(db, id);
 
   if (!user) {
-    return c.json({ message: "User not found" }, 404);
+    throw new NotFoundException("User");
   }
 
-  return c.json(user);
+  return c.json(user, 200);
 });
 
 app.openapi(createUserRoute, async (c) => {
   const db = c.get("db");
   const supabase = c.get("supabase");
-
   const body = c.req.valid("json");
 
   const user = await usersService.create(db, supabase, body);
@@ -53,20 +56,22 @@ app.openapi(inviteUserRoute, async (c) => {
     const inviteResult = await usersService.invite(db, supabase, id);
 
     if (!inviteResult) {
-      return c.json({ message: "User not found" }, 404);
+      throw new NotFoundException("User");
     }
 
     return c.json(
       {
         success: true,
-        message: "Invitation link generated and dispatched.",
+        message: "Invitation link generated and dispatched successfully",
       },
       200,
     );
   } catch (error: any) {
-    return c.json(
-      { message: error.message || "Invitation execution error" },
-      400,
+    if (error instanceof NotFoundException) throw error;
+
+    throw new BadRequestException(
+      error.message || "Invitation execution error",
+      "INVITATION_ERROR",
     );
   }
 });
@@ -78,25 +83,27 @@ app.openapi(updatePasswordRoute, async (c) => {
   const { password } = c.req.valid("json");
 
   if (!authUser) {
-    return c.json({ message: "Unauthorized" }, 401);
+    throw new UnauthorizedException();
   }
 
   const { error: authError } = await supabase.auth.admin.updateUserById(
-    authUser.id, 
-    { password: password }
+    authUser.id,
+    { password: password },
   );
 
   if (authError) {
-    return c.json({ message: authError.message }, 400);
+    throw new BadRequestException(authError.message, "AUTH_PROVIDER_ERROR");
   }
 
   await usersService.updateStatusByAuthId(db, authUser.id, "confirmed");
 
-  return c.json({
-    success: true,
-    message: "Password updated successfully.",
-  }, 200);
+  return c.json(
+    {
+      success: true,
+      message: "Password updated successfully.",
+    },
+    200,
+  );
 });
-
 
 export default app;
