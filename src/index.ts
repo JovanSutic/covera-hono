@@ -7,6 +7,7 @@ import locationsRoutes from "./modules/locations/locations.route";
 import { dbMiddleware } from "./middleware/db";
 import { App } from "./types";
 import { supabaseMiddleware } from "./middleware/supabase";
+import { s3Middleware } from "./middleware/s3";
 import { CustomException } from "./core/errors/error.exceptions";
 
 const app = new OpenAPIHono<App>({
@@ -62,6 +63,7 @@ app.onError((err, c) => {
 if (process.env.NODE_ENV !== "test") {
   app.use("*", dbMiddleware);
   app.use("*", supabaseMiddleware);
+  app.use("*", s3Middleware);
 }
 
 app.route("/users", usersRoutes);

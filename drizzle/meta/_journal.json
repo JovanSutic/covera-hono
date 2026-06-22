@@ -15,6 +15,20 @@
       "when": 1780779538478,
       "tag": "0001_past_ken_ellis",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782036820881,
+      "tag": "0002_married_nomad",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1782037592332,
+      "tag": "0003_smooth_plazm",
+      "breakpoints": true
     }
   ]
 }
