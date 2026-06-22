@@ -3,7 +3,11 @@ import { createRoute, z } from "@hono/zod-openapi";
 import {
   ApartmentSchema,
   ApartmentsListSchema,
+  ConfirmUploadBodySchema,
+  ConfirmUploadResponseSchema,
   CreateApartmentSchema,
+  RequestUploadTokensSchema,
+  UploadTokensResponseSchema,
 } from "./apartments.schema";
 import { authGuard } from "@/middleware/authGuard";
 import { rolesGuard } from "@/middleware/roleGuard";
@@ -74,6 +78,66 @@ export const createApartmentRoute = createRoute({
       content: {
         "application/json": {
           schema: ApartmentSchema,
+        },
+      },
+    },
+    ...apartmentErrors,
+  },
+});
+
+export const requestUploadTokensRoute = createRoute({
+  method: "post",
+  path: "/{id}/photos/upload-tokens",
+  tags: ["Apartments"],
+  middleware: [authGuard, rolesGuard(["admin"])] as const,
+  request: {
+    params: z.object({
+      id: z.string().uuid(),
+    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: RequestUploadTokensSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Presigned R2 upload URLs generated successfully",
+      content: {
+        "application/json": {
+          schema: UploadTokensResponseSchema,
+        },
+      },
+    },
+    ...apartmentErrors,
+  },
+});
+
+export const confirmUploadRoute = createRoute({
+  method: "post",
+  path: "/{id}/photos/confirm",
+  tags: ["Apartments"],
+  middleware: [authGuard, rolesGuard(["admin"])] as const,
+  request: {
+    params: z.object({
+      id: z.string().uuid(),
+    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: ConfirmUploadBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Uploaded image states synchronized successfully",
+      content: {
+        "application/json": {
+          schema: ConfirmUploadResponseSchema,
         },
       },
     },

@@ -2,12 +2,22 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTestApp } from "@/core/utils/test-factory"; 
 import apartmentsApp from "./apartments.route"; 
 import { NotFoundException } from "@/core/errors/error.exceptions";
+import { S3Client } from "@aws-sdk/client-s3";
 
-const { mockGetAll, mockGetById, mockCreate, mockCheckExistence } = vi.hoisted(() => {
+const { 
+  mockGetAll, 
+  mockGetById, 
+  mockCreate, 
+  mockGenerateUploadTokens, 
+  mockSyncUploadedPhotos, 
+  mockCheckExistence 
+} = vi.hoisted(() => {
   return {
     mockGetAll: vi.fn(),
     mockGetById: vi.fn(),
     mockCreate: vi.fn(),
+    mockGenerateUploadTokens: vi.fn(),
+    mockSyncUploadedPhotos: vi.fn(),
     mockCheckExistence: vi.fn(),
   };
 });
@@ -17,6 +27,8 @@ vi.mock("../../modules/apartments/apartments.service", () => ({
     getAll: mockGetAll,
     getById: mockGetById,
     create: mockCreate,
+    generateUploadTokens: mockGenerateUploadTokens,
+    syncUploadedPhotos: mockSyncUploadedPhotos,
   },
 }));
 
@@ -32,6 +44,8 @@ const MOCK_JWT = "Bearer validation-mock-token-string";
 const testApp = createTestApp({
   contextOverrides: () => ({
     getUser: mockGetUser,
+    s3: {} as S3Client,
+    r2BucketName: "test-apartment-photos-bucket",
     authUser: { 
       id: VALID_UUID, 
       email: "admin@example.com", 
@@ -167,5 +181,105 @@ describe("Apartments routes", () => {
     });
 
     expect(res.status).toBe(404);
+  });
+
+  it("POST /apartments/:id/photos/upload-tokens should generate presigned URLs", async () => {
+    setupSuccessfulGuards();
+
+    const input = {
+      fileTypes: ["image/jpeg", "image/png"],
+    };
+
+    mockGenerateUploadTokens.mockResolvedValue([
+      { uploadUrl: "https://example.com", key: "apartments/id/img1.jpg" },
+      { uploadUrl: "https://example.com", key: "apartments/id/img2.png" },
+    ]);
+
+    const res = await testApp.request(`/apartments/${VALID_UUID}/photos/upload-tokens`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: MOCK_JWT,
+      },
+      body: JSON.stringify(input),
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.tokens).toHaveLength(2);
+    expect(data.tokens[0].key).toBe("apartments/id/img1.jpg");
+    expect(mockCheckExistence).toHaveBeenCalledWith(expect.any(Object), "apartments", VALID_UUID);
+  });
+
+  it("POST /apartments/:id/photos/upload-tokens should return 404 if the apartment does not exist", async () => {
+    setupSuccessfulGuards();
+    mockCheckExistence.mockRejectedValueOnce(new NotFoundException(`apartments with ID ${INVALID_UUID}`));
+
+    const input = {
+      fileTypes: ["image/jpeg"],
+    };
+
+    const res = await testApp.request(`/apartments/${INVALID_UUID}/photos/upload-tokens`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: MOCK_JWT,
+      },
+      body: JSON.stringify(input),
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /apartments/:id/photos/confirm should synchronize uploaded storage keys", async () => {
+    setupSuccessfulGuards();
+
+    const input = {
+      uploadedKeys: [
+        "apartments/id/old-photo.jpg",
+        "apartments/id/new-photo.png"
+      ],
+    };
+
+    mockSyncUploadedPhotos.mockResolvedValue({
+      success: true,
+      activeCount: 2,
+    });
+
+    const res = await testApp.request(`/apartments/${VALID_UUID}/photos/confirm`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: MOCK_JWT,
+      },
+      body: JSON.stringify(input),
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(data.activeCount).toBe(2);
+    expect(mockCheckExistence).toHaveBeenCalledWith(expect.any(Object), "apartments", VALID_UUID);
+  });
+
+  it("POST /apartments/:id/photos/confirm should return 404 if the apartment does not exist", async () => {
+    setupSuccessfulGuards();
+    mockCheckExistence.mockRejectedValueOnce(new NotFoundException(`apartments with ID ${INVALID_UUID}`));
+
+    const input = {
+      uploadedKeys: ["apartments/id/photo.jpg"],
+    };
+
+    const res = await testApp.request(`/apartments/${INVALID_UUID}/photos/confirm`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: MOCK_JWT,
+      },
+      body: JSON.stringify(input),
+    });
+
+    expect(res.status).toBe(404);
+    expect(mockSyncUploadedPhotos).not.toHaveBeenCalled();
   });
 });
