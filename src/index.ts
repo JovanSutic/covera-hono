@@ -9,6 +9,7 @@ import { App } from "./types";
 import { supabaseMiddleware } from "./middleware/supabase";
 import { s3Middleware } from "./middleware/s3";
 import { CustomException } from "./core/errors/error.exceptions";
+import { cors } from "hono/cors";
 
 const app = new OpenAPIHono<App>({
   defaultHook: (result, c) => {
@@ -59,6 +60,16 @@ app.onError((err, c) => {
     500,
   );
 });
+
+app.use(
+  "*",
+  cors({
+    origin: ["http://localhost:5173", "https://covera.josutic-sutic.workers.dev"],
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+  })
+);
 
 if (process.env.NODE_ENV !== "test") {
   app.use("*", dbMiddleware);
