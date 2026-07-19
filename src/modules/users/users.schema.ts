@@ -36,6 +36,34 @@ export const UpdatePasswordSchema = z
     path: ["confirmPassword"],
   });
 
+export const GetUsersQuerySchema = z.object({
+  search: z
+    .string()
+    .optional()
+    .transform((val) => (val === "" ? undefined : val))
+    .openapi({
+      param: { name: "search", in: "query" },
+      description: "Search by first name, last name, or email",
+      example: "John",
+    }),
+  role: z
+    .enum(["admin", "host", "guest"])
+    .optional()
+    .openapi({
+      param: { name: "role", in: "query" },
+      description: "Filter users by system access role",
+    }),
+  status: z
+    .enum(["created", "invited", "confirmed", "disabled"])
+    .optional()
+    .openapi({
+      param: { name: "status", in: "query" },
+      description: "Filter users by status",
+    }),
+});
+
+export type GetUsersQueryInput = z.infer<typeof GetUsersQuerySchema>;
+
 export const UpdatePasswordResponseSchema = z.object({
   success: z.boolean(),
   message: z.string(),
