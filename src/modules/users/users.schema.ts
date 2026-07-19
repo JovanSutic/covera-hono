@@ -64,6 +64,14 @@ export const GetUsersQuerySchema = z.object({
 
 export type GetUsersQueryInput = z.infer<typeof GetUsersQuerySchema>;
 
+type UserRole = z.infer<typeof CreateUserSchema>["role"];
+
+export type UserFilters = {
+  role?: UserRole;
+  status?: "created" | "invited" | "confirmed" | "disabled";
+  search?: string;
+};
+
 export const UpdatePasswordResponseSchema = z.object({
   success: z.boolean(),
   message: z.string(),

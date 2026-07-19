@@ -1,17 +1,43 @@
-import { eq } from "drizzle-orm";
+import { and, eq, ilike, or } from "drizzle-orm";
 import crypto from "node:crypto";
 import type { User } from "@/db";
 import { users } from "@/db/schema";
 import { Variables } from "@/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "@hono/zod-openapi";
-import { CreateUserSchema } from "./users.schema";
+import { CreateUserSchema, UserFilters } from "./users.schema";
 
-export type CreateUserInput = z.infer<typeof CreateUserSchema>;
+type CreateUserInput = z.infer<typeof CreateUserSchema>;
 
 export const usersService = {
-  async getAll(db: Variables["db"]): Promise<User[]> {
-    return db.select().from(users);
+  async getAll(db: Variables["db"], filters?: UserFilters): Promise<User[]> {
+    const conditions = [];
+
+    if (filters?.role) {
+      conditions.push(eq(users.role, filters.role));
+    }
+
+    if (filters?.status) {
+      conditions.push(eq(users.status, filters.status));
+    }
+
+    if (filters?.search) {
+      conditions.push(
+        or(
+          ilike(users.firstName, `%${filters.search}%`),
+          ilike(users.lastName, `%${filters.search}%`),
+          ilike(users.email, `%${filters.search}%`),
+        ),
+      );
+    }
+
+    const query = db.select().from(users);
+
+    if (conditions.length > 0) {
+      return query.where(and(...conditions));
+    }
+
+    return query;
   },
 
   async getById(db: Variables["db"], id: string): Promise<User | null> {
