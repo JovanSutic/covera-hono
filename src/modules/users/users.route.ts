@@ -19,9 +19,11 @@ const app = new OpenAPIHono<App>();
 
 app.openapi(getUsersRoute, async (c) => {
   const db = c.get("db");
-  const users = await usersService.getAll(db);
 
-  return c.json(users, 200);
+  const filters = c.req.valid("query");
+  const matchedUsers = await usersService.getAll(db, filters);
+
+  return c.json(matchedUsers, 200);
 });
 
 app.openapi(getUserByIdRoute, async (c) => {
