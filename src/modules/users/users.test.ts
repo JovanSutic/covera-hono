@@ -81,6 +81,31 @@ describe("Users routes", () => {
     expect(data.length).toBe(1);
   });
 
+  it("GET /users should correctly parse query parameters and pass them to the service", async () => {
+    setupSuccessfulGuards();
+
+    mockedService.getAll.mockReturnValue([
+      {
+        id: VALID_UUID,
+        email: "host-jane@example.com",
+        firstName: "Jane",
+        lastName: "Smith",
+        role: "host",
+        status: "confirmed",
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+
+    const res = await testApp.request("/users?role=host&search=Jane", {
+      headers: { Authorization: MOCK_JWT },
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.length).toBe(1);
+    expect(data[0].role).toBe("host");
+  });
+
   it("GET /users should return 401 if token is missing", async () => {
     mockGetUser.mockResolvedValue({
       data: { user: null },

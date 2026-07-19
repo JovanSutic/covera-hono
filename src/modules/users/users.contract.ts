@@ -5,6 +5,7 @@ import {
   CreateUserSchema,
   UpdatePasswordSchema,
   UpdatePasswordResponseSchema,
+  GetUsersQuerySchema,
 } from "./users.schema";
 import { authGuard } from "@/middleware/authGuard";
 import { rolesGuard } from "@/middleware/roleGuard";
@@ -17,6 +18,9 @@ export const getUsersRoute = createRoute({
   path: "/",
   tags: ["Users"],
   middleware: [authGuard, rolesGuard(["admin"])] as const,
+  request: {
+    query: GetUsersQuerySchema,
+  },
   responses: {
     200: {
       description: "Get all users",
