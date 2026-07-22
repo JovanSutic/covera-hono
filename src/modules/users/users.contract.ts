@@ -37,7 +37,7 @@ export const getUsersRoute = createRoute({
 
 export const getUserByIdRoute = createRoute({
   method: "get",
-  path: "/:id",
+  path: "/{id}",
   tags: ["Users"],
   middleware: [authGuard] as const,
   request: {
@@ -62,7 +62,7 @@ export const getUserByIdRoute = createRoute({
 
 export const getUserByAuthIdRoute = createRoute({
   method: "get",
-  path: "/auth/:authId",
+  path: "/auth/{authId}",
   tags: ["Users"],
   middleware: [authGuard] as const,
   request: {
@@ -114,10 +114,10 @@ export const createUserRoute = createRoute({
 
 export const inviteUserRoute = createRoute({
   method: "post",
-  path: "/:id/invite",
+  path: "/{id}/invite",
   tags: ["Users"],
   middleware: [authGuard, rolesGuard(["admin"])] as const,
-  request: { params: z.object({ id: z.string().uuid() }) },
+  request: { params: z.object({ id: z.uuid() }) },
   responses: {
     200: {
       description: "Invitation link generated and dispatched successfully",
