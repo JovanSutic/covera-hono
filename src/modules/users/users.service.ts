@@ -1,4 +1,4 @@
-import { and, eq, ilike, or } from "drizzle-orm";
+import { and, eq, ilike, or, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import type { User } from "@/db";
 import { users } from "@/db/schema";
@@ -124,10 +124,16 @@ export const usersService = {
     authId: string,
     status: "created" | "invited" | "confirmed" | "disabled",
   ): Promise<User | null> {
+    const cleanAuthId = authId.trim().toLowerCase();
+
+    if (!cleanAuthId) {
+      return null;
+    }
+
     const [updated] = await db
       .update(users)
       .set({ status })
-      .where(eq(users.authId, authId))
+      .where(eq(users.authId, sql`${cleanAuthId}::uuid`))
       .returning();
 
     return updated ?? null;
