@@ -84,7 +84,7 @@ app.openapi(updatePasswordRoute, async (c) => {
   const supabase = c.get("supabase");
   const { password } = c.req.valid("json");
 
-  if (!authUser) {
+  if (!authUser.id) {
     throw new UnauthorizedException();
   }
 
