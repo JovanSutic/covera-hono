@@ -124,17 +124,49 @@ export const usersService = {
     authId: string,
     status: "created" | "invited" | "confirmed" | "disabled",
   ): Promise<User | null> {
-    const cleanAuthId = authId.trim().toLowerCase();
+    console.log("\n================ SERVICE DIAGNOSTIC START ================");
+    console.log("1. Raw authId received:", JSON.stringify(authId));
+    console.log("2. Status to apply:", status);
+
+    const cleanAuthId = authId?.trim().toLowerCase();
+    console.log("3. Cleaned authId:", cleanAuthId);
 
     if (!cleanAuthId) {
+      console.error("❌ SERVICE ABORTED: cleanAuthId is null/empty!");
+      console.log("================ SERVICE DIAGNOSTIC END ================\n");
       return null;
     }
 
-    const [updated] = await db
-      .update(users)
-      .set({ status })
-      .where(eq(users.authId, sql`${cleanAuthId}::uuid`))
-      .returning();
+    try {
+      const rawCheck = await db.execute(
+        sql`SELECT id, email, auth_id, status FROM users WHERE auth_id = ${cleanAuthId}::uuid`,
+      );
+      console.log(
+        "4. RAW SQL check before update returned rows:",
+        Array.from(rawCheck),
+      );
+    } catch (err: any) {
+      console.error("❌ RAW SQL Check Error:", err.message);
+    }
+
+    console.log("5. Executing Drizzle UPDATE query...");
+    let updated: User | undefined;
+
+    try {
+      const results = await db
+        .update(users)
+        .set({ status })
+        .where(eq(users.authId, sql`${cleanAuthId}::uuid`))
+        .returning();
+
+      console.log("6. Drizzle update raw returning array:", results);
+      updated = results[0];
+    } catch (err: any) {
+      console.error("❌ Drizzle UPDATE Query Threw Error:", err);
+    }
+
+    console.log("7. Final returned user object:", updated ?? null);
+    console.log("================ SERVICE DIAGNOSTIC END ================\n");
 
     return updated ?? null;
   },
