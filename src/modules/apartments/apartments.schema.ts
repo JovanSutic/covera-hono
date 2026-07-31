@@ -1,10 +1,22 @@
 import { z } from "@hono/zod-openapi";
 
-import { SelectApartmentSchema, InsertApartmentSchema } from "@/db";
+import {
+  SelectApartmentSchema,
+  InsertApartmentSchema,
+  SelectLocationSchema,
+} from "@/db";
 
 export const ApartmentSchema = SelectApartmentSchema.openapi("Apartment");
 
+export const ApartmentWithLocationSchema = SelectApartmentSchema.extend({
+  location: SelectLocationSchema.openapi("Location"),
+}).openapi("ApartmentWithLocation");
+
 export const ApartmentsListSchema = z.array(ApartmentSchema);
+
+export const ApartmentsWithLocationListSchema = z.array(
+  ApartmentWithLocationSchema
+);
 
 export const CreateApartmentSchema = InsertApartmentSchema.omit({
   id: true,
@@ -18,8 +30,8 @@ export const RequestUploadTokensSchema = z.object({
         .string()
         .regex(
           /^image\/(jpeg|png|webp|jpg)$/,
-          "Only JPEG, PNG, and WebP are allowed",
-        ),
+          "Only JPEG, PNG, and WebP are allowed"
+        )
     )
     .min(1, "Must request at least one upload token"),
 });
@@ -29,7 +41,7 @@ export const UploadTokensResponseSchema = z.object({
     z.object({
       uploadUrl: z.string().url(),
       key: z.string(),
-    }),
+    })
   ),
 });
 

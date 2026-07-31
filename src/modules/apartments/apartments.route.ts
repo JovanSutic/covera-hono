@@ -11,6 +11,7 @@ import { NotFoundException } from "@/core/errors/error.exceptions";
 import { apartmentsService } from "./apartments.service";
 import { App } from "@/types";
 import { checkExistence } from "@/core/utils/db-validator";
+import { usersService } from "../users/users.service";
 
 const app = new OpenAPIHono<App>();
 
@@ -89,7 +90,12 @@ app.openapi(getApartmentsByHostRoute, async (c) => {
   const db = c.get("db");
   const authUser = c.get("authUser");
 
-  const userApartments = await apartmentsService.getByOwnerId(db, authUser.id);
+  const user = await usersService.getByAuthId(db, authUser.id);
+  if (!user) {
+    throw new NotFoundException("User");
+  }
+
+  const userApartments = await apartmentsService.getByOwnerId(db, user.id);
 
   return c.json(userApartments, 200);
 });
