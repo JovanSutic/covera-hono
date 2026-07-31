@@ -141,4 +141,14 @@ export const apartmentsService = {
       };
     });
   },
+
+  async getByOwnerId(
+    db: Variables["db"],
+    ownerId: string
+  ): Promise<Apartment[]> {
+    return db
+      .select()
+      .from(apartments)
+      .where(eq(apartments.owner, ownerId));
+  },
 };

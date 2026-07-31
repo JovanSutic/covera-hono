@@ -144,3 +144,21 @@ export const confirmUploadRoute = createRoute({
     ...apartmentErrors,
   },
 });
+
+export const getApartmentsByHostRoute = createRoute({
+  method: "get",
+  path: "/host/me",
+  tags: ["Apartments"],
+  middleware: [authGuard, rolesGuard(["host"])] as const,
+  responses: {
+    200: {
+      description: "List apartments owned by the logged-in host",
+      content: {
+        "application/json": {
+          schema: ApartmentsListSchema,
+        },
+      },
+    },
+    ...apartmentErrors,
+  },
+});
