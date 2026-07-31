@@ -5,6 +5,7 @@ import {
   createApartmentRoute,
   requestUploadTokensRoute,
   confirmUploadRoute,
+  getApartmentsByHostRoute,
 } from "./apartments.contract";
 import { NotFoundException } from "@/core/errors/error.exceptions";
 import { apartmentsService } from "./apartments.service";
@@ -51,7 +52,7 @@ app.openapi(requestUploadTokensRoute, async (c) => {
   const db = c.get("db");
   const s3 = c.get("s3");
   const bucketName = c.get("r2BucketName");
-  
+
   const { id } = c.req.valid("param");
   const { fileTypes } = c.req.valid("json");
 
@@ -62,7 +63,7 @@ app.openapi(requestUploadTokensRoute, async (c) => {
     s3,
     bucketName,
     id,
-    fileTypes
+    fileTypes,
   );
 
   return c.json({ tokens }, 200);
@@ -75,9 +76,22 @@ app.openapi(confirmUploadRoute, async (c) => {
 
   await checkExistence(db, "apartments", id);
 
-  const result = await apartmentsService.syncUploadedPhotos(db, id, uploadedKeys);
+  const result = await apartmentsService.syncUploadedPhotos(
+    db,
+    id,
+    uploadedKeys,
+  );
 
   return c.json(result, 200);
+});
+
+app.openapi(getApartmentsByHostRoute, async (c) => {
+  const db = c.get("db");
+  const authUser = c.get("authUser");
+
+  const userApartments = await apartmentsService.getByOwnerId(db, authUser.id);
+
+  return c.json(userApartments, 200);
 });
 
 export default app;
