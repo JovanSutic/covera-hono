@@ -2,6 +2,7 @@ import { eq, and, count, inArray, notInArray } from "drizzle-orm";
 
 import {
   apartments,
+  locations,
   apartmentImages,
   type Apartment,
   type NewApartment,
@@ -142,13 +143,19 @@ export const apartmentsService = {
     });
   },
 
-  async getByOwnerId(
-    db: Variables["db"],
-    ownerId: string
-  ): Promise<Apartment[]> {
-    return db
-      .select()
+  async getByOwnerId(db: Variables["db"], ownerId: string) {
+    const rows = await db
+      .select({
+        apartment: apartments,
+        location: locations,
+      })
       .from(apartments)
+      .innerJoin(locations, eq(apartments.location, locations.id))
       .where(eq(apartments.owner, ownerId));
+
+    return rows.map(({ apartment, location }) => ({
+      ...apartment,
+      location,
+    }));
   },
 };

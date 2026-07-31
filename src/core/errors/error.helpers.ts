@@ -21,7 +21,7 @@ export const commonErrors = {
   getStandardResponses: (resource: string) => ({
     400: commonErrors.badRequest,
     401: commonErrors.unauthorized,
-    404: commonErrors.notFound(resource), // Automatically handles 404 mapping for the resource
+    404: commonErrors.notFound(resource),
     409: commonErrors.conflict(resource),
     500: commonErrors.internalServerError,
   }),
