@@ -1,5 +1,6 @@
 import {
   pgTable,
+  pgEnum,
   uuid,
   text,
   timestamp,
@@ -12,6 +13,16 @@ import {
 
 import { users } from "./users";
 import { locations } from "./locations";
+
+export const currencyEnum = pgEnum("currency", [
+  "EUR",
+  "USD",
+  "GBP",
+  "RSD",
+  "CHF",
+  "CAD",
+  "AUD",
+]);
 
 export const apartments = pgTable("apartments", {
   id: uuid("id")
@@ -32,6 +43,10 @@ export const apartments = pgTable("apartments", {
   address: text("address")
     .notNull(),
 
+  currency: currencyEnum("currency")
+    .default("EUR")
+    .notNull(),
+
   externalId: text("external_id"),
 
   createdAt: timestamp("created_at")
@@ -44,6 +59,8 @@ export type Apartment =
 
 export type NewApartment =
   typeof apartments.$inferInsert;
+
+export type Currency = (typeof currencyEnum.enumValues)[number];
 
 export const SelectApartmentSchema =
   createSelectSchema(apartments);

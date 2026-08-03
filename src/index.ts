@@ -4,6 +4,7 @@ import usersRoutes from "./modules/users/users.route";
 import apartmentsRoutes from "./modules/apartments/apartments.route";
 import reservationsRoutes from "./modules/reservations/reservations.route";
 import locationsRoutes from "./modules/locations/locations.route";
+import assetsRoutes from "./modules/assets/assets.route";
 import { dbMiddleware } from "./middleware/db";
 import { App } from "./types";
 import { supabaseMiddleware } from "./middleware/supabase";
@@ -81,6 +82,7 @@ app.route("/users", usersRoutes);
 app.route("/apartments", apartmentsRoutes);
 app.route("/reservations", reservationsRoutes);
 app.route("/locations", locationsRoutes);
+app.route("/assets", assetsRoutes);
 
 app.doc("/openapi.json", {
   openapi: "3.0.0",
