@@ -8,15 +8,17 @@ import {
 
 export const ApartmentSchema = SelectApartmentSchema.openapi("Apartment");
 
+export const LocationSchema = SelectLocationSchema.openapi("Location");
+
 export const ApartmentWithLocationSchema = SelectApartmentSchema.extend({
-  location: SelectLocationSchema.openapi("Location"),
+  location: LocationSchema,
 }).openapi("ApartmentWithLocation");
 
-export const ApartmentsListSchema = z.array(ApartmentSchema);
+export const ApartmentsListSchema = z
+  .array(ApartmentWithLocationSchema)
+  .openapi("ApartmentsList");
 
-export const ApartmentsWithLocationListSchema = z.array(
-  ApartmentWithLocationSchema
-);
+export const ApartmentsWithLocationListSchema = ApartmentsListSchema;
 
 export const CreateApartmentSchema = InsertApartmentSchema.omit({
   id: true,
@@ -30,8 +32,8 @@ export const RequestUploadTokensSchema = z.object({
         .string()
         .regex(
           /^image\/(jpeg|png|webp|jpg)$/,
-          "Only JPEG, PNG, and WebP are allowed"
-        )
+          "Only JPEG, PNG, and WebP are allowed",
+        ),
     )
     .min(1, "Must request at least one upload token"),
 });
@@ -41,7 +43,7 @@ export const UploadTokensResponseSchema = z.object({
     z.object({
       uploadUrl: z.string().url(),
       key: z.string(),
-    })
+    }),
   ),
 });
 

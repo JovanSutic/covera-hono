@@ -1,8 +1,8 @@
 import { createRoute, z } from "@hono/zod-openapi";
 
 import {
-  ApartmentSchema,
   ApartmentsListSchema,
+  ApartmentWithLocationSchema,
   ApartmentsWithLocationListSchema,
   ConfirmUploadBodySchema,
   ConfirmUploadResponseSchema,
@@ -50,7 +50,7 @@ export const getApartmentByIdRoute = createRoute({
       description: "Apartment detail",
       content: {
         "application/json": {
-          schema: ApartmentSchema,
+          schema: ApartmentWithLocationSchema,
         },
       },
     },
@@ -78,7 +78,7 @@ export const createApartmentRoute = createRoute({
       description: "Apartment created",
       content: {
         "application/json": {
-          schema: ApartmentSchema,
+          schema: ApartmentWithLocationSchema,
         },
       },
     },
