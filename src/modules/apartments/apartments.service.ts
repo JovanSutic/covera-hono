@@ -8,36 +8,59 @@ import {
   type NewApartment,
 } from "@/db";
 import { Variables, Bindings } from "@/types";
-import { BadRequestException } from "@/core/errors/error.exceptions";
+import { BadRequestException, NotFoundException } from "@/core/errors/error.exceptions";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export const MAX_PHOTOS_PER_APARTMENT = 20;
 
 export const apartmentsService = {
-  async getAll(db: Variables["db"]): Promise<Apartment[]> {
-    return db.select().from(apartments);
+  async getAll(db: Variables["db"]) {
+    const rows = await db
+      .select({
+        apartment: apartments,
+        location: locations,
+      })
+      .from(apartments)
+      .innerJoin(locations, eq(apartments.location, locations.id));
+
+    return rows.map(({ apartment, location }) => ({
+      ...apartment,
+      location,
+    }));
   },
 
-  async getById(db: Variables["db"], id: string): Promise<Apartment | null> {
-    const [apartment] = await db
-      .select()
+  async getById(db: Variables["db"], id: string) {
+    const [row] = await db
+      .select({
+        apartment: apartments,
+        location: locations,
+      })
       .from(apartments)
+      .innerJoin(locations, eq(apartments.location, locations.id))
       .where(eq(apartments.id, id));
 
-    return apartment ?? null;
+    if (!row) return null;
+
+    return {
+      ...row.apartment,
+      location: row.location,
+    };
   },
 
-  async create(
-    db: Variables["db"],
-    apartment: NewApartment,
-  ): Promise<Apartment> {
+  async create(db: Variables["db"], apartment: NewApartment) {
     const [createdApartment] = await db
       .insert(apartments)
       .values(apartment)
       .returning();
 
-    return createdApartment;
+    const result = await this.getById(db, createdApartment.id);
+
+    if (!result) {
+      throw new NotFoundException("Failed to retrieve created apartment");
+    }
+
+    return result;
   },
 
   async generateUploadTokens(
@@ -88,13 +111,12 @@ export const apartmentsService = {
   async syncUploadedPhotos(
     db: Variables["db"],
     apartmentId: string,
-    uploadedKeys: string[]
+    uploadedKeys: string[],
   ): Promise<{ success: boolean; activeCount: number }> {
-    
     if (uploadedKeys.length > MAX_PHOTOS_PER_APARTMENT) {
       throw new BadRequestException(
         `Sync rejected. Total confirmed photos (${uploadedKeys.length}) exceeds the maximum allowed limit of ${MAX_PHOTOS_PER_APARTMENT}.`,
-        "MAX_PHOTOS_EXCEEDED"
+        "MAX_PHOTOS_EXCEEDED",
       );
     }
 
@@ -109,22 +131,24 @@ export const apartmentsService = {
           and(
             eq(apartmentImages.apartmentId, apartmentId),
             eq(apartmentImages.status, "active"),
-            notInArray(apartmentImages.storageKey, uploadedKeys)
-          )
+            notInArray(apartmentImages.storageKey, uploadedKeys),
+          ),
         );
+
       const existingRecords = await tx
         .select({ storageKey: apartmentImages.storageKey })
         .from(apartmentImages)
         .where(
           and(
             eq(apartmentImages.apartmentId, apartmentId),
-            inArray(apartmentImages.storageKey, uploadedKeys)
-          )
+            inArray(apartmentImages.storageKey, uploadedKeys),
+          ),
         );
 
       const existingKeys = existingRecords.map((r: any) => r.storageKey);
-      
-      const uniqueNewKeys = uploadedKeys.filter((key) => !existingKeys.includes(key));
+      const uniqueNewKeys = uploadedKeys.filter(
+        (key) => !existingKeys.includes(key),
+      );
 
       if (uniqueNewKeys.length > 0) {
         const valuesToInsert = uniqueNewKeys.map((key) => ({
