@@ -174,8 +174,8 @@ describe("Assets routes", () => {
       const input = {
         apartmentId: VALID_APARTMENT_ID,
         name: "Coffee Machine",
-        category: "Appliances",
-        roomLocation: "Kitchen",
+        category: "APPLIANCES_SMALL",
+        roomLocation: "KITCHEN",
         description: "Nespresso Machine",
         photoProofRequirement: "CLOSEUP",
         approximateValueCents: 15000,

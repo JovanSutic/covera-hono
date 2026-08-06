@@ -36,6 +36,13 @@
       "when": 1785772306130,
       "tag": "0004_daily_supernaut",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786005299775,
+      "tag": "0005_sharp_satana",
+      "breakpoints": true
     }
   ]
 }
