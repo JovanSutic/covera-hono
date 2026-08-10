@@ -43,6 +43,13 @@
       "when": 1786005299775,
       "tag": "0005_sharp_satana",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786394941625,
+      "tag": "0006_daffy_pride",
+      "breakpoints": true
     }
   ]
 }
