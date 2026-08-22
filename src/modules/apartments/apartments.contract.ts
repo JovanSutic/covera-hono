@@ -13,6 +13,7 @@ import {
 import { authGuard } from "@/middleware/authGuard";
 import { rolesGuard } from "@/middleware/roleGuard";
 import { commonErrors } from "@/core/errors/error.helpers";
+import { apartmentGuard } from "@/middleware/apartmentGuard";
 
 const apartmentErrors = commonErrors.getStandardResponses("Apartment");
 
@@ -90,10 +91,10 @@ export const requestUploadTokensRoute = createRoute({
   method: "post",
   path: "/{id}/photos/upload-tokens",
   tags: ["Apartments"],
-  middleware: [authGuard, rolesGuard(["admin"])] as const,
+  middleware: [authGuard, rolesGuard(["admin", "host"]), apartmentGuard(false)] as const,
   request: {
     params: z.object({
-      id: z.string().uuid(),
+      id: z.uuid(),
     }),
     body: {
       content: {
@@ -120,10 +121,10 @@ export const confirmUploadRoute = createRoute({
   method: "post",
   path: "/{id}/photos/confirm",
   tags: ["Apartments"],
-  middleware: [authGuard, rolesGuard(["admin"])] as const,
+  middleware: [authGuard, rolesGuard(["admin", "host"]), apartmentGuard(false)] as const,
   request: {
     params: z.object({
-      id: z.string().uuid(),
+      id: z.uuid(),
     }),
     body: {
       content: {

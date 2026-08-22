@@ -1,42 +1,76 @@
-import type { Reservation, CreateReservationInput } from "./reservations.types";
-
-const reservations: Reservation[] = [];
+import { eq, desc } from "drizzle-orm";
+import { reservations, Reservation, NewReservation } from "@/db";
+import { Variables } from "@/types";
 
 export const reservationsService = {
-  getAll(): Reservation[] {
-    return reservations;
+  async getByApartmentId(
+    db: Variables["db"],
+    apartmentId: string
+  ): Promise<Reservation[]> {
+    return db
+      .select()
+      .from(reservations)
+      .where(eq(reservations.apartmentId, apartmentId))
+      .orderBy(desc(reservations.checkInDatetime));
   },
 
-  getById(id: string) {
-    return reservations.find((r) => r.id === id);
+  async getById(
+    db: Variables["db"],
+    id: string
+  ): Promise<Reservation | null> {
+    const [reservation] = await db
+      .select()
+      .from(reservations)
+      .where(eq(reservations.id, id));
+
+    return reservation || null;
   },
 
-  create(guestUserId: string, input: CreateReservationInput) {
-    const start = new Date(input.startDate);
-    const end = new Date(input.endDate);
+  async create(
+    db: Variables["db"],
+    reservation: NewReservation
+  ): Promise<Reservation> {
+    const [createdReservation] = await db
+      .insert(reservations)
+      .values(reservation)
+      .returning();
 
-    // basic overlap check (simplified)
-    const conflict = reservations.find((r) => {
-      return (
-        r.apartmentId === input.apartmentId &&
-        !(end <= r.startDate || start >= r.endDate)
-      );
-    });
+    return createdReservation;
+  },
 
-    if (conflict) {
-      throw new Error("Apartment already booked for these dates");
+  async update(
+    db: Variables["db"],
+    id: string,
+    data: Partial<NewReservation>
+  ): Promise<Reservation | null> {
+    const [updatedReservation] = await db
+      .update(reservations)
+      .set({
+        ...data,
+        updatedAt: new Date(),
+      })
+      .where(eq(reservations.id, id))
+      .returning();
+
+    return updatedReservation || null;
+  },
+
+  async delete(
+    db: Variables["db"],
+    id: string
+  ): Promise<{ success: boolean; id: string } | null> {
+    const [deletedReservation] = await db
+      .delete(reservations)
+      .where(eq(reservations.id, id))
+      .returning({ id: reservations.id });
+
+    if (!deletedReservation) {
+      return null;
     }
 
-    const reservation: Reservation = {
-      id: `res_${Date.now()}`,
-      apartmentId: input.apartmentId,
-      guestUserId,
-      startDate: start,
-      endDate: end,
-      status: "pending",
+    return {
+      success: true,
+      id: deletedReservation.id,
     };
-
-    reservations.push(reservation);
-    return reservation;
   },
 };
