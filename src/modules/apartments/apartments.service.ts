@@ -8,9 +8,13 @@ import {
   type NewApartment,
 } from "@/db";
 import { Variables, Bindings } from "@/types";
-import { BadRequestException, NotFoundException } from "@/core/errors/error.exceptions";
+import {
+  BadRequestException,
+  NotFoundException,
+} from "@/core/errors/error.exceptions";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { ConfirmUploadBody } from "./apartments.schema";
 
 export const MAX_PHOTOS_PER_APARTMENT = 20;
 
@@ -111,11 +115,13 @@ export const apartmentsService = {
   async syncUploadedPhotos(
     db: Variables["db"],
     apartmentId: string,
-    uploadedKeys: string[],
+    payload: ConfirmUploadBody,
   ): Promise<{ success: boolean; activeCount: number }> {
+    const { shotId, reservationId, type, uploadedKeys } = payload;
+
     if (uploadedKeys.length > MAX_PHOTOS_PER_APARTMENT) {
       throw new BadRequestException(
-        `Sync rejected. Total confirmed photos (${uploadedKeys.length}) exceeds the maximum allowed limit of ${MAX_PHOTOS_PER_APARTMENT}.`,
+        `Sync rejected. Total confirmed photos (${uploadedKeys.length}) exceeds maximum limit of ${MAX_PHOTOS_PER_APARTMENT}.`,
         "MAX_PHOTOS_EXCEEDED",
       );
     }
@@ -130,35 +136,34 @@ export const apartmentsService = {
         .where(
           and(
             eq(apartmentImages.apartmentId, apartmentId),
+            eq(apartmentImages.reservationId, reservationId),
+            eq(apartmentImages.shotId, shotId),
             eq(apartmentImages.status, "active"),
             notInArray(apartmentImages.storageKey, uploadedKeys),
           ),
         );
 
-      const existingRecords = await tx
-        .select({ storageKey: apartmentImages.storageKey })
-        .from(apartmentImages)
-        .where(
-          and(
-            eq(apartmentImages.apartmentId, apartmentId),
-            inArray(apartmentImages.storageKey, uploadedKeys),
-          ),
-        );
+      const valuesToInsert = uploadedKeys.map((key: string) => ({
+        apartmentId,
+        shotId,
+        reservationId,
+        type,
+        storageKey: key,
+        status: "active" as const,
+        deletedAt: null,
+      }));
 
-      const existingKeys = existingRecords.map((r: any) => r.storageKey);
-      const uniqueNewKeys = uploadedKeys.filter(
-        (key) => !existingKeys.includes(key),
-      );
-
-      if (uniqueNewKeys.length > 0) {
-        const valuesToInsert = uniqueNewKeys.map((key) => ({
-          apartmentId,
-          storageKey: key,
-          status: "active" as const,
-        }));
-
-        await tx.insert(apartmentImages).values(valuesToInsert);
-      }
+      await tx
+        .insert(apartmentImages)
+        .values(valuesToInsert)
+        .onConflictDoUpdate({
+          target: apartmentImages.storageKey,
+          set: {
+            status: "active",
+            deletedAt: null,
+            type,
+          },
+        });
 
       return {
         success: true,

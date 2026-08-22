@@ -50,6 +50,13 @@
       "when": 1786394941625,
       "tag": "0006_daffy_pride",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787380007333,
+      "tag": "0007_mean_whirlwind",
+      "breakpoints": true
     }
   ]
 }

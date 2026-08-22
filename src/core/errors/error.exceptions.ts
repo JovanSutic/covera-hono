@@ -34,3 +34,9 @@ export class UnauthorizedException extends CustomException {
     super(401, "UNAUTHORIZED", message);
   }
 }
+
+export class ForbiddenException extends CustomException {
+  constructor(message = "Forbidden: You do not have access to this resource.") {
+    super(403, "FORBIDDEN", message);
+  }
+}

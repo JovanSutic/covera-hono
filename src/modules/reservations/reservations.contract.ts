@@ -1,76 +1,50 @@
-import { createRoute, z } from "@hono/zod-openapi";
+import { createRoute } from "@hono/zod-openapi";
 import {
-  ReservationSchema,
+  ApartmentParamSchema,
   CreateReservationSchema,
+  DeleteReservationResponseSchema,
+  ReservationParamSchema,
+  ReservationSchema,
   ReservationsListSchema,
+  UpdateReservationSchema,
 } from "./reservations.schema";
+import { authGuard } from "@/middleware/authGuard";
+import { commonErrors } from "@/core/errors/error.helpers";
+import { rolesGuard } from "@/middleware/roleGuard";
+import { apartmentGuard } from "@/middleware/apartmentGuard";
 
-/**
- * GET /reservations
- */
-export const getReservationsRoute = createRoute({
+const reservationErrors = commonErrors.getStandardResponses("Reservation");
+
+export const getReservationsByApartmentRoute = createRoute({
   method: "get",
-  path: "/",
+  path: "/apartment/{apartmentId}",
   tags: ["Reservations"],
-
+  middleware: [
+    authGuard,
+    rolesGuard(["admin", "host"]),
+    apartmentGuard(true),
+  ] as const,
+  request: {
+    params: ApartmentParamSchema,
+  },
   responses: {
     200: {
-      description: "List reservations",
+      description: "List all reservations for a specific apartment",
       content: {
         "application/json": {
           schema: ReservationsListSchema,
         },
       },
     },
+    ...reservationErrors,
   },
 });
 
-/**
- * GET /reservations/:id
- */
-export const getReservationByIdRoute = createRoute({
-  method: "get",
-  path: "/{id}",
-
-  request: {
-    params: z.object({
-      id: z.string(),
-    }),
-  },
-
-  tags: ["Reservations"],
-
-  responses: {
-    200: {
-      description: "Reservation detail",
-      content: {
-        "application/json": {
-          schema: ReservationSchema,
-        },
-      },
-    },
-
-    404: {
-      description: "Not found",
-      content: {
-        "application/json": {
-          schema: z.object({
-            message: z.string(),
-          }),
-        },
-      },
-    },
-  },
-});
-
-/**
- * POST /reservations
- */
 export const createReservationRoute = createRoute({
   method: "post",
   path: "/",
   tags: ["Reservations"],
-
+  middleware: [authGuard, rolesGuard(["host"])] as const,
   request: {
     body: {
       content: {
@@ -80,25 +54,64 @@ export const createReservationRoute = createRoute({
       },
     },
   },
-
   responses: {
     201: {
-      description: "Created reservation",
+      description: "Reservation created successfully",
       content: {
         "application/json": {
           schema: ReservationSchema,
         },
       },
     },
-    400: {
-      description: "Bad request",
+    ...reservationErrors,
+  },
+});
+
+export const updateReservationRoute = createRoute({
+  method: "patch",
+  path: "/{id}",
+  tags: ["Reservations"],
+  middleware: [authGuard, rolesGuard(["host"])] as const,
+  request: {
+    params: ReservationParamSchema,
+    body: {
       content: {
         "application/json": {
-          schema: z.object({
-            message: z.string(),
-          }),
+          schema: UpdateReservationSchema,
         },
       },
     },
+  },
+  responses: {
+    200: {
+      description: "Reservation updated successfully",
+      content: {
+        "application/json": {
+          schema: ReservationSchema,
+        },
+      },
+    },
+    ...reservationErrors,
+  },
+});
+
+export const deleteReservationRoute = createRoute({
+  method: "delete",
+  path: "/{id}",
+  tags: ["Reservations"],
+  middleware: [authGuard, rolesGuard(["host"])] as const,
+  request: {
+    params: ReservationParamSchema,
+  },
+  responses: {
+    200: {
+      description: "Reservation deleted successfully",
+      content: {
+        "application/json": {
+          schema: DeleteReservationResponseSchema,
+        },
+      },
+    },
+    ...reservationErrors,
   },
 });
