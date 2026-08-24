@@ -57,7 +57,7 @@ export async function assertApartmentOwnership(
   }
 
   const [apartment] = await db
-    .select({ ownerId: apartments.owner })
+    .select({ owner: apartments.owner })
     .from(apartments)
     .where(eq(apartments.id, apartmentId))
     .limit(1);
