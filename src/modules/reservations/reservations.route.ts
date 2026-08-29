@@ -12,6 +12,7 @@ import {
 } from "@/core/errors/error.exceptions";
 import {
   assertApartmentOwnership,
+  assertNoOverlappingReservation,
   checkExistence,
 } from "@/core/utils/db-validator";
 import { App } from "@/types";
@@ -21,15 +22,17 @@ const app = new OpenAPIHono<App>();
 app.openapi(getReservationsByApartmentRoute, async (c) => {
   const db = c.get("db");
   const { apartmentId } = c.req.valid("param");
+  const query = c.req.valid("query");
 
   await checkExistence(db, "apartments", apartmentId);
 
-  const reservationsList = await reservationsService.getByApartmentId(
+  const paginatedReservations = await reservationsService.getByApartmentId(
     db,
     apartmentId,
+    query,
   );
 
-  return c.json(reservationsList, 200);
+  return c.json(paginatedReservations, 200);
 });
 
 app.openapi(createReservationRoute, async (c) => {
@@ -45,6 +48,14 @@ app.openapi(createReservationRoute, async (c) => {
     userId: user.id,
     role: user.role,
     allowAdmin: true,
+  });
+
+  await assertNoOverlappingReservation(db, {
+    apartmentId: body.apartmentId,
+    checkInDatetime: body.checkInDatetime,
+    checkOutDatetime: body.checkOutDatetime,
+    alternativeCheckInDatetime: body.alternativeCheckInDatetime,
+    alternativeCheckOutDatetime: body.alternativeCheckOutDatetime,
   });
 
   const newReservation = await reservationsService.create(db, body);

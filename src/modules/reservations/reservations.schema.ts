@@ -7,6 +7,63 @@ export const ReservationsListSchema = z
   .array(ReservationSchema)
   .openapi("ReservationsList");
 
+// --- Pagination & Query Schemas ---
+
+export const ReservationQuerySchema = z
+  .object({
+    page: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .default(1)
+      .openapi({
+        description: "Page number (1-indexed)",
+        default: 1,
+      }),
+    limit: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .default(20)
+      .openapi({
+        description: "Number of items per page (max 100)",
+        default: 20,
+      }),
+    sortBy: z
+      .enum(["checkInDatetime", "checkOutDatetime", "createdAt"])
+      .default("checkInDatetime")
+      .openapi({
+        description: "Field to sort reservations by",
+        default: "checkInDatetime",
+      }),
+    order: z
+      .enum(["asc", "desc"])
+      .default("desc")
+      .openapi({
+        description: "Sort direction",
+        default: "desc",
+      }),
+  })
+  .openapi("ReservationQuery");
+
+export const PaginatedReservationsSchema = z
+  .object({
+    data: z.array(ReservationSchema),
+    pagination: z.object({
+      page: z.number().openapi({ example: 1 }),
+      limit: z.number().openapi({ example: 20 }),
+      totalItems: z.number().openapi({ example: 42 }),
+      totalPages: z.number().openapi({ example: 3 }),
+    }),
+  })
+  .openapi("PaginatedReservations");
+
+export type ReservationQuery = z.infer<typeof ReservationQuerySchema>;
+export type PaginatedReservations = z.infer<typeof PaginatedReservationsSchema>;
+
+// --- Existing Schemas ---
+
 export const CreateReservationSchema = InsertReservationSchema.omit({
   id: true,
   createdAt: true,
@@ -15,6 +72,8 @@ export const CreateReservationSchema = InsertReservationSchema.omit({
   .extend({
     checkInDatetime: z.coerce.date(),
     checkOutDatetime: z.coerce.date(),
+    alternativeCheckInDatetime: z.coerce.date().optional(),
+    alternativeCheckOutDatetime: z.coerce.date().optional(),
   })
   .openapi("CreateReservation");
 

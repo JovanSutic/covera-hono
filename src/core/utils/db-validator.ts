@@ -1,11 +1,13 @@
-import { eq } from "drizzle-orm";
+import { and, eq, gt, lt, ne, sql } from "drizzle-orm";
 import { users } from "@/db/schema/users";
 import { locations } from "@/db/schema/locations";
 import { apartments } from "@/db/schema/apartments";
 import {
   NotFoundException,
   ForbiddenException,
+  ConflictException,
 } from "@/core/errors/error.exceptions";
+import { reservations } from "@/db";
 
 const schemaRegistry = {
   users: users,
@@ -69,6 +71,69 @@ export async function assertApartmentOwnership(
   if (apartment.owner !== userId) {
     throw new ForbiddenException(
       "You do not have permission to modify or create resources for this apartment",
+    );
+  }
+}
+
+interface OverlapCheckParams {
+  apartmentId: string;
+  checkInDatetime: Date | string;
+  checkOutDatetime: Date | string;
+  alternativeCheckInDatetime?: Date | string | null;
+  alternativeCheckOutDatetime?: Date | string | null;
+  excludeReservationId?: string; // Optional: for update/edit operations
+}
+
+export async function assertNoOverlappingReservation(
+  db: any,
+  params: OverlapCheckParams,
+): Promise<void> {
+  const {
+    apartmentId,
+    checkInDatetime,
+    checkOutDatetime,
+    alternativeCheckInDatetime,
+    alternativeCheckOutDatetime,
+    excludeReservationId,
+  } = params;
+
+  // Use alternative dates if provided, otherwise default to standard dates
+  const newStart = new Date(alternativeCheckInDatetime ?? checkInDatetime);
+  const newEnd = new Date(alternativeCheckOutDatetime ?? checkOutDatetime);
+
+  if (newStart >= newEnd) {
+    throw new ConflictException(
+      "Check-out date must be strictly after check-in date.",
+    );
+  }
+
+  // Expression to derive effective check-in date for existing DB records
+  const existingStart = sql`COALESCE(${reservations.alternativeCheckInDatetime}, ${reservations.checkInDatetime})`;
+  // Expression to derive effective check-out date for existing DB records
+  const existingEnd = sql`COALESCE(${reservations.alternativeCheckOutDatetime}, ${reservations.checkOutDatetime})`;
+
+  const conditions = [
+    eq(reservations.apartmentId, apartmentId),
+    // Exclude closed or cancelled reservations if applicable
+    ne(reservations.status, "CLOSED"),
+    // Overlap formula: (existingStart < newEnd) AND (existingEnd > newStart)
+    lt(existingStart, newEnd),
+    gt(existingEnd, newStart),
+  ];
+
+  if (excludeReservationId) {
+    conditions.push(ne(reservations.id, excludeReservationId));
+  }
+
+  const [overlapping] = await db
+    .select({ id: reservations.id })
+    .from(reservations)
+    .where(and(...conditions))
+    .limit(1);
+
+  if (overlapping) {
+    throw new ConflictException(
+      "The apartment is already booked for the selected date range.",
     );
   }
 }

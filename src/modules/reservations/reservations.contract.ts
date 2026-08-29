@@ -3,9 +3,10 @@ import {
   ApartmentParamSchema,
   CreateReservationSchema,
   DeleteReservationResponseSchema,
+  PaginatedReservationsSchema,
   ReservationParamSchema,
+  ReservationQuerySchema,
   ReservationSchema,
-  ReservationsListSchema,
   UpdateReservationSchema,
 } from "./reservations.schema";
 import { authGuard } from "@/middleware/authGuard";
@@ -26,13 +27,14 @@ export const getReservationsByApartmentRoute = createRoute({
   ] as const,
   request: {
     params: ApartmentParamSchema,
+    query: ReservationQuerySchema,
   },
   responses: {
     200: {
-      description: "List all reservations for a specific apartment",
+      description: "List all reservations for a specific apartment with pagination and sorting",
       content: {
         "application/json": {
-          schema: ReservationsListSchema,
+          schema: PaginatedReservationsSchema,
         },
       },
     },

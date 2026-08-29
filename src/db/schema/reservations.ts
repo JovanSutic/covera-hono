@@ -4,6 +4,7 @@ import {
   varchar, 
   timestamp, 
   integer, 
+  boolean,
   pgEnum, 
   index 
 } from 'drizzle-orm/pg-core';
@@ -35,6 +36,13 @@ export const reservations = pgTable(
 
     checkInDatetime: timestamp('check_in_datetime', { withTimezone: true }).notNull(),
     checkOutDatetime: timestamp('check_out_datetime', { withTimezone: true }).notNull(),
+
+    // Optional alternative check-in / check-out timestamps (e.g., early check-in, late check-out)
+    alternativeCheckInDatetime: timestamp('alternative_check_in_datetime', { withTimezone: true }),
+    alternativeCheckOutDatetime: timestamp('alternative_check_out_datetime', { withTimezone: true }),
+
+    // Indicates whether the reservation inspection photo requirements have been satisfied
+    hasPhotoProof: boolean('has_photo_proof').default(false).notNull(),
 
     status: reservationStatusEnum('status').default('UPCOMING').notNull(),
 

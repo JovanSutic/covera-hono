@@ -41,7 +41,7 @@ app.openapi(createApartmentRoute, async (c) => {
 
   const { owner, location } = body;
 
-  console.log('ovde');
+  console.log("ovde");
 
   await checkExistence(db, "users", owner);
   await checkExistence(db, "locations", location);
@@ -75,12 +75,12 @@ app.openapi(requestUploadTokensRoute, async (c) => {
 app.openapi(confirmUploadRoute, async (c) => {
   const db = c.get("db");
   const { id: apartmentId } = c.req.valid("param");
-  const { shotId, reservationId, type, uploadedKeys } = c.req.valid("json");
+  const body = c.req.valid("json");
 
   const result = await apartmentsService.syncUploadedPhotos(
     db,
     apartmentId,
-    { shotId, reservationId, type, uploadedKeys }
+    body,
   );
 
   return c.json(result, 200);

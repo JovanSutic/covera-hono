@@ -16,6 +16,7 @@ const {
   mockGetApartmentById,
   mockCheckExistence,
   mockAssertApartmentOwnership,
+  mockAssertNoOverlappingReservation,
 } = vi.hoisted(() => {
   return {
     mockGetByApartmentId: vi.fn(),
@@ -26,6 +27,7 @@ const {
     mockGetApartmentById: vi.fn(),
     mockCheckExistence: vi.fn(),
     mockAssertApartmentOwnership: vi.fn(),
+    mockAssertNoOverlappingReservation: vi.fn(),
   };
 });
 
@@ -58,6 +60,7 @@ const mockedUserService = usersService as unknown as {
 vi.mock("@/core/utils/db-validator", () => ({
   checkExistence: mockCheckExistence,
   assertApartmentOwnership: mockAssertApartmentOwnership,
+  assertNoOverlappingReservation: mockAssertNoOverlappingReservation,
 }));
 
 const mockGetUser = vi.fn();
@@ -215,6 +218,9 @@ describe("Reservations routes", () => {
 
   describe("POST /reservations", () => {
     it("should create a reservation successfully for apartment owner", async () => {
+      mockAssertApartmentOwnership.mockResolvedValue(undefined);
+      mockAssertNoOverlappingReservation.mockResolvedValue(undefined); // <-- Pass overlap assertion
+
       const input = {
         apartmentId: VALID_APARTMENT_ID,
         guestName: "Jane Smith",
