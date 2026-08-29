@@ -42,10 +42,9 @@ export const getApartmentByIdRoute = createRoute({
   middleware: [authGuard] as const,
   request: {
     params: z.object({
-      id: z.string().uuid(),
+      id: z.string().uuid("Invalid apartment UUID"),
     }),
   },
-
   responses: {
     200: {
       description: "Apartment detail",
@@ -73,7 +72,6 @@ export const createApartmentRoute = createRoute({
       },
     },
   },
-
   responses: {
     201: {
       description: "Apartment created",
@@ -94,7 +92,7 @@ export const requestUploadTokensRoute = createRoute({
   middleware: [authGuard, rolesGuard(["admin", "host"]), apartmentGuard(false)] as const,
   request: {
     params: z.object({
-      id: z.uuid(),
+      id: z.string().uuid("Invalid apartment UUID"),
     }),
     body: {
       content: {
@@ -124,7 +122,7 @@ export const confirmUploadRoute = createRoute({
   middleware: [authGuard, rolesGuard(["admin", "host"]), apartmentGuard(false)] as const,
   request: {
     params: z.object({
-      id: z.uuid(),
+      id: z.string().uuid("Invalid apartment UUID"),
     }),
     body: {
       content: {

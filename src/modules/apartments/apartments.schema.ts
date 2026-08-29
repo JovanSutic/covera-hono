@@ -47,13 +47,17 @@ export const UploadTokensResponseSchema = z.object({
   ),
 });
 
-export const ConfirmUploadBodySchema = z.object({
+export const ConfirmUploadPhotoItemSchema = z.object({
   shotId: z.uuid("Invalid shotId UUID"),
+  uploadedKey: z.string().min(1, "Storage key cannot be empty"),
+});
+
+export const ConfirmUploadBodySchema = z.object({
   reservationId: z.uuid("Invalid reservationId UUID"),
   type: z.enum(["checkin_state", "damage"]).default("checkin_state"),
-  uploadedKeys: z
-    .array(z.string())
-    .min(1, "Must confirm at least one uploaded photo storage key"),
+  photos: z
+    .array(ConfirmUploadPhotoItemSchema)
+    .min(1, "Must confirm at least one uploaded photo"),
 });
 
 export type ConfirmUploadBody = z.infer<typeof ConfirmUploadBodySchema>;

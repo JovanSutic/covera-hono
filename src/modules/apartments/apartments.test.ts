@@ -115,7 +115,7 @@ describe("Apartments routes", () => {
     setupSuccessfulGuards("admin");
   });
 
-  /*  it("GET /apartments should return all apartments", async () => {
+  it("GET /apartments should return all apartments", async () => {
     mockGetAll.mockResolvedValue([
       {
         id: "apt_1",
@@ -221,7 +221,7 @@ describe("Apartments routes", () => {
     });
 
     expect(res.status).toBe(404);
-  }); */
+  });
 
   it("POST /apartments/:id/photos/upload-tokens should generate presigned URLs", async () => {
     mockGetById.mockResolvedValue({
@@ -266,12 +266,17 @@ describe("Apartments routes", () => {
 
   it("POST /apartments/:id/photos/confirm should synchronize uploaded storage keys", async () => {
     const input = {
-      shotId: VALID_UUID,
       reservationId: VALID_UUID,
       type: "checkin_state",
-      uploadedKeys: [
-        "apartments/id/old-photo.jpg",
-        "apartments/id/new-photo.png",
+      photos: [
+        {
+          shotId: VALID_UUID,
+          uploadedKey: "apartments/id/old-photo.jpg",
+        },
+        {
+          shotId: VALID_UUID,
+          uploadedKey: "apartments/id/new-photo.png",
+        },
       ],
     };
 
@@ -298,7 +303,7 @@ describe("Apartments routes", () => {
     expect(data.activeCount).toBe(2);
   });
 
-   it("GET /apartments/host/me should return apartments for the authenticated host", async () => {
+  it("GET /apartments/host/me should return apartments for the authenticated host", async () => {
     setupSuccessfulGuards("host");
 
     mockGetByOwnerId.mockResolvedValue([

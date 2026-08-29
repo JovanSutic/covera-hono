@@ -117,14 +117,17 @@ export const apartmentsService = {
     apartmentId: string,
     payload: ConfirmUploadBody,
   ): Promise<{ success: boolean; activeCount: number }> {
-    const { shotId, reservationId, type, uploadedKeys } = payload;
+    const { reservationId, type, photos } = payload;
 
-    if (uploadedKeys.length > MAX_PHOTOS_PER_APARTMENT) {
+    if (photos.length > MAX_PHOTOS_PER_APARTMENT) {
       throw new BadRequestException(
-        `Sync rejected. Total confirmed photos (${uploadedKeys.length}) exceeds maximum limit of ${MAX_PHOTOS_PER_APARTMENT}.`,
+        `Sync rejected. Total confirmed photos (${photos.length}) exceeds maximum limit of ${MAX_PHOTOS_PER_APARTMENT}.`,
         "MAX_PHOTOS_EXCEEDED",
       );
     }
+
+    const targetShotIds = Array.from(new Set(photos.map((p) => p.shotId)));
+    const incomingKeys = photos.map((p) => p.uploadedKey);
 
     return await db.transaction(async (tx: any) => {
       await tx
@@ -137,18 +140,18 @@ export const apartmentsService = {
           and(
             eq(apartmentImages.apartmentId, apartmentId),
             eq(apartmentImages.reservationId, reservationId),
-            eq(apartmentImages.shotId, shotId),
+            inArray(apartmentImages.shotId, targetShotIds),
             eq(apartmentImages.status, "active"),
-            notInArray(apartmentImages.storageKey, uploadedKeys),
+            notInArray(apartmentImages.storageKey, incomingKeys),
           ),
         );
 
-      const valuesToInsert = uploadedKeys.map((key: string) => ({
+      const valuesToInsert = photos.map((photo) => ({
         apartmentId,
-        shotId,
+        shotId: photo.shotId,
         reservationId,
         type,
-        storageKey: key,
+        storageKey: photo.uploadedKey,
         status: "active" as const,
         deletedAt: null,
       }));
@@ -167,7 +170,7 @@ export const apartmentsService = {
 
       return {
         success: true,
-        activeCount: uploadedKeys.length,
+        activeCount: photos.length,
       };
     });
   },

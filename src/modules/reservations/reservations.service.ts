@@ -1,23 +1,56 @@
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, asc, count } from "drizzle-orm";
 import { reservations, Reservation, NewReservation } from "@/db";
 import { Variables } from "@/types";
+import type {
+  ReservationQuery,
+  PaginatedReservations,
+} from "./reservations.schema"; // adjust path as needed
+
+const SORTABLE_COLUMNS = {
+  checkInDatetime: reservations.checkInDatetime,
+  checkOutDatetime: reservations.checkOutDatetime,
+  createdAt: reservations.createdAt,
+} as const;
 
 export const reservationsService = {
   async getByApartmentId(
     db: Variables["db"],
-    apartmentId: string
-  ): Promise<Reservation[]> {
-    return db
-      .select()
-      .from(reservations)
-      .where(eq(reservations.apartmentId, apartmentId))
-      .orderBy(desc(reservations.checkInDatetime));
+    apartmentId: string,
+    query: ReservationQuery,
+  ): Promise<PaginatedReservations> {
+    const { page, limit, sortBy, order } = query;
+    const offset = (page - 1) * limit;
+
+    const sortColumn = SORTABLE_COLUMNS[sortBy] ?? reservations.checkInDatetime;
+    const orderFn = order === "asc" ? asc : desc;
+    const whereClause = eq(reservations.apartmentId, apartmentId);
+
+    const [countResult, data] = await Promise.all([
+      db.select({ total: count() }).from(reservations).where(whereClause),
+      db
+        .select()
+        .from(reservations)
+        .where(whereClause)
+        .orderBy(orderFn(sortColumn))
+        .limit(limit)
+        .offset(offset),
+    ]);
+
+    const totalItems = Number(countResult[0]?.total ?? 0);
+    const totalPages = Math.ceil(totalItems / limit);
+
+    return {
+      data,
+      pagination: {
+        page,
+        limit,
+        totalItems,
+        totalPages,
+      },
+    };
   },
 
-  async getById(
-    db: Variables["db"],
-    id: string
-  ): Promise<Reservation | null> {
+  async getById(db: Variables["db"], id: string): Promise<Reservation | null> {
     const [reservation] = await db
       .select()
       .from(reservations)
@@ -28,7 +61,7 @@ export const reservationsService = {
 
   async create(
     db: Variables["db"],
-    reservation: NewReservation
+    reservation: NewReservation,
   ): Promise<Reservation> {
     const [createdReservation] = await db
       .insert(reservations)
@@ -41,7 +74,7 @@ export const reservationsService = {
   async update(
     db: Variables["db"],
     id: string,
-    data: Partial<NewReservation>
+    data: Partial<NewReservation>,
   ): Promise<Reservation | null> {
     const [updatedReservation] = await db
       .update(reservations)
@@ -57,7 +90,7 @@ export const reservationsService = {
 
   async delete(
     db: Variables["db"],
-    id: string
+    id: string,
   ): Promise<{ success: boolean; id: string } | null> {
     const [deletedReservation] = await db
       .delete(reservations)

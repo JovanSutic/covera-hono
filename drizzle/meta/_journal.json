@@ -57,6 +57,13 @@
       "when": 1787380007333,
       "tag": "0007_mean_whirlwind",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788016011545,
+      "tag": "0008_secret_namora",
+      "breakpoints": true
     }
   ]
 }
