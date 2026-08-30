@@ -12,12 +12,11 @@ import { apartments } from './apartments';
 import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
 
 export const reservationStatusEnum = pgEnum('reservation_status', [
-  'UPCOMING',
-  'CHECK_IN_DUE',
-  'ACTIVE',
-  'CHECK_OUT_DUE',
-  'CLOSED',
+  'PENDING_PROOF',
+  'COVERED',
   'DISPUTED',
+  'RESOLVED',
+  'CLOSED',
 ]);
 
 export const reservations = pgTable(
@@ -44,7 +43,7 @@ export const reservations = pgTable(
     // Indicates whether the reservation inspection photo requirements have been satisfied
     hasPhotoProof: boolean('has_photo_proof').default(false).notNull(),
 
-    status: reservationStatusEnum('status').default('UPCOMING').notNull(),
+    status: reservationStatusEnum('status').default('PENDING_PROOF').notNull(),
 
     proofWindowHours: integer('proof_window_hours').default(4).notNull(),
 
