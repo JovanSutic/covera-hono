@@ -84,6 +84,13 @@ interface OverlapCheckParams {
   excludeReservationId?: string; // Optional: for update/edit operations
 }
 
+const isRealDate = (dateStr?: string | Date | null): boolean => {
+  if (!dateStr) return false;
+  const time = new Date(dateStr).getTime();
+  // Ensures it's a valid date and strictly after the 1970 Unix epoch
+  return !isNaN(time) && time > 0;
+};
+
 export async function assertNoOverlappingReservation(
   db: any,
   params: OverlapCheckParams,
@@ -97,9 +104,14 @@ export async function assertNoOverlappingReservation(
     excludeReservationId,
   } = params;
 
-  // Use alternative dates if provided, otherwise default to standard dates
-  const newStart = new Date(alternativeCheckInDatetime ?? checkInDatetime);
-  const newEnd = new Date(alternativeCheckOutDatetime ?? checkOutDatetime);
+  // 1. Resolve in-memory dates safely
+  const newStart = isRealDate(alternativeCheckInDatetime)
+    ? new Date(alternativeCheckInDatetime!)
+    : new Date(checkInDatetime);
+
+  const newEnd = isRealDate(alternativeCheckOutDatetime)
+    ? new Date(alternativeCheckOutDatetime!)
+    : new Date(checkOutDatetime);
 
   if (newStart >= newEnd) {
     throw new ConflictException(
@@ -107,18 +119,27 @@ export async function assertNoOverlappingReservation(
     );
   }
 
-  // Expression to derive effective check-in date for existing DB records
-  const existingStart = sql`COALESCE(${reservations.alternativeCheckInDatetime}, ${reservations.checkInDatetime})`;
-  // Expression to derive effective check-out date for existing DB records
-  const existingEnd = sql`COALESCE(${reservations.alternativeCheckOutDatetime}, ${reservations.checkOutDatetime})`;
+  // 2. Format as ISO strings to avoid Postgres JS parameter driver errors
+  const isoStart = newStart.toISOString();
+  const isoEnd = newEnd.toISOString();
+
+  // 3. PostgreSQL SQL expressions: NULLIF converts epoch/1970 back to NULL before COALESCE runs
+  const existingStart = sql`COALESCE(
+    NULLIF(${reservations.alternativeCheckInDatetime}, '1970-01-01 00:00:00'::timestamp),
+    ${reservations.checkInDatetime}
+  )`;
+
+  const existingEnd = sql`COALESCE(
+    NULLIF(${reservations.alternativeCheckOutDatetime}, '1970-01-01 00:00:00'::timestamp),
+    ${reservations.checkOutDatetime}
+  )`;
 
   const conditions = [
     eq(reservations.apartmentId, apartmentId),
-    // Exclude closed or cancelled reservations if applicable
     ne(reservations.status, "CLOSED"),
-    // Overlap formula: (existingStart < newEnd) AND (existingEnd > newStart)
-    lt(existingStart, newEnd),
-    gt(existingEnd, newStart),
+    // Check overlap: existingStart < newEnd AND existingEnd > newStart
+    sql`${existingStart} < ${isoStart}::timestamp`,
+    sql`${existingEnd} > ${isoEnd}::timestamp`,
   ];
 
   if (excludeReservationId) {

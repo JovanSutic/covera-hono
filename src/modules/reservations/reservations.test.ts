@@ -227,7 +227,7 @@ describe("Reservations routes", () => {
         guestEmail: "jane@example.com",
         checkInDatetime: "2026-09-01T14:00:00.000Z",
         checkOutDatetime: "2026-09-05T10:00:00.000Z",
-        status: "UPCOMING",
+        status: "PENDING_PROOF",
         numberOfGuests: 2,
         totalPriceCents: 15000,
       };
