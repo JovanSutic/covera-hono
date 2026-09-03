@@ -104,7 +104,7 @@ export async function assertNoOverlappingReservation(
     excludeReservationId,
   } = params;
 
-  // 1. Resolve in-memory dates safely
+  // 1. Resolve target incoming range
   const newStart = isRealDate(alternativeCheckInDatetime)
     ? new Date(alternativeCheckInDatetime!)
     : new Date(checkInDatetime);
@@ -119,27 +119,28 @@ export async function assertNoOverlappingReservation(
     );
   }
 
-  // 2. Format as ISO strings to avoid Postgres JS parameter driver errors
   const isoStart = newStart.toISOString();
   const isoEnd = newEnd.toISOString();
 
-  // 3. PostgreSQL SQL expressions: NULLIF converts epoch/1970 back to NULL before COALESCE runs
-  const existingStart = sql`COALESCE(
-    NULLIF(${reservations.alternativeCheckInDatetime}, '1970-01-01 00:00:00'::timestamp),
-    ${reservations.checkInDatetime}
-  )`;
-
-  const existingEnd = sql`COALESCE(
-    NULLIF(${reservations.alternativeCheckOutDatetime}, '1970-01-01 00:00:00'::timestamp),
-    ${reservations.checkOutDatetime}
-  )`;
-
+  // 2. Direct SQL query comparing active ranges
   const conditions = [
     eq(reservations.apartmentId, apartmentId),
     ne(reservations.status, "CLOSED"),
-    // Check overlap: existingStart < newEnd AND existingEnd > newStart
-    sql`${existingStart} < ${isoStart}::timestamp`,
-    sql`${existingEnd} > ${isoEnd}::timestamp`,
+
+    // Resolve existing effective start/end inline
+    sql`COALESCE(
+      CASE WHEN ${reservations.alternativeCheckInDatetime} > '1970-01-02'::timestamptz 
+           THEN ${reservations.alternativeCheckInDatetime} 
+           ELSE NULL END,
+      ${reservations.checkInDatetime}
+    ) < ${isoEnd}::timestamptz`,
+
+    sql`COALESCE(
+      CASE WHEN ${reservations.alternativeCheckOutDatetime} > '1970-01-02'::timestamptz 
+           THEN ${reservations.alternativeCheckOutDatetime} 
+           ELSE NULL END,
+      ${reservations.checkOutDatetime}
+    ) > ${isoStart}::timestamptz`,
   ];
 
   if (excludeReservationId) {
