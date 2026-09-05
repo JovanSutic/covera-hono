@@ -71,6 +71,13 @@
       "when": 1788102752601,
       "tag": "0009_chunky_taskmaster",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788610269817,
+      "tag": "0010_high_shriek",
+      "breakpoints": true
     }
   ]
 }

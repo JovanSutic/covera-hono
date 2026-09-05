@@ -44,6 +44,13 @@ export const ReservationQuerySchema = z
         description: "Sort direction",
         default: "desc",
       }),
+    history: z.coerce
+      .boolean()
+      .default(false)
+      .openapi({
+        description: "Whether to include past reservations (history)",
+        default: false,
+      }),
   })
   .openapi("ReservationQuery");
 
@@ -104,6 +111,6 @@ export const ApartmentParamSchema = z.object({
 export const DeleteReservationResponseSchema = z
   .object({
     success: z.boolean(),
-    id: z.string().uuid(),
+    id: z.uuid(),
   })
   .openapi("DeleteReservationResponse");

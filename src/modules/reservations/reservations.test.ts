@@ -147,21 +147,29 @@ describe("Reservations routes", () => {
         name: "Downtown Loft",
       });
 
-      const mockReservations = [
-        {
-          id: VALID_RESERVATION_ID,
-          apartmentId: VALID_APARTMENT_ID,
-          guestName: "John Doe",
-          guestEmail: "john@example.com",
-          checkInDatetime: new Date().toISOString(),
-          checkOutDatetime: new Date().toISOString(),
-          status: "UPCOMING",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+      const mockPaginatedResponse = {
+        data: [
+          {
+            id: VALID_RESERVATION_ID,
+            apartmentId: VALID_APARTMENT_ID,
+            guestName: "John Doe",
+            guestEmail: "john@example.com",
+            checkInDatetime: new Date().toISOString(),
+            checkOutDatetime: new Date().toISOString(),
+            status: "UPCOMING",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+        pagination: {
+          page: 1,
+          limit: 20,
+          totalItems: 1,
+          totalPages: 1,
         },
-      ];
+      };
 
-      mockGetByApartmentId.mockResolvedValue(mockReservations);
+      mockGetByApartmentId.mockResolvedValue(mockPaginatedResponse);
 
       const res = await testApp.request(
         `/reservations/apartment/${VALID_APARTMENT_ID}`,
@@ -171,22 +179,90 @@ describe("Reservations routes", () => {
       );
 
       expect(res.status).toBe(200);
-      const data = await res.json();
-      expect(Array.isArray(data)).toBe(true);
-      expect(data.length).toBe(1);
-      expect(data[0].guestName).toBe("John Doe");
+      const body = await res.json();
+      expect(Array.isArray(body.data)).toBe(true);
+      expect(body.data.length).toBe(1);
+      expect(body.data[0].guestName).toBe("John Doe");
 
-      // Verify guard actually resolved the apartment using the URL parameter ID
+      // Verify service was called with coerced default query parameters including history: false
+      expect(mockGetByApartmentId).toHaveBeenCalledWith(
+        expect.any(Object),
+        VALID_APARTMENT_ID,
+        expect.objectContaining({
+          page: 1,
+          limit: 20,
+          sortBy: "checkInDatetime",
+          order: "desc",
+          history: false,
+        }),
+      );
+
+      // Verify guard resolved the apartment using URL parameter ID
       expect(mockGetApartmentById).toHaveBeenCalledWith(
         expect.any(Object),
         VALID_APARTMENT_ID,
       );
     });
 
+    it("should pass history=true to service when history query parameter is set to true", async () => {
+      mockGetApartmentById.mockResolvedValueOnce({
+        id: VALID_APARTMENT_ID,
+        owner: VALID_USER_ID,
+        name: "Downtown Loft",
+      });
+
+      const mockPaginatedResponse = {
+        data: [
+          {
+            id: VALID_RESERVATION_ID,
+            apartmentId: VALID_APARTMENT_ID,
+            guestName: "Jane Smith",
+            guestEmail: "jane@example.com",
+            checkInDatetime: "2024-01-01T12:00:00.000Z",
+            checkOutDatetime: "2024-01-05T10:00:00.000Z",
+            status: "COMPLETED",
+            createdAt: "2023-12-15T00:00:00.000Z",
+            updatedAt: "2024-01-05T10:00:00.000Z",
+          },
+        ],
+        pagination: {
+          page: 1,
+          limit: 20,
+          totalItems: 1,
+          totalPages: 1,
+        },
+      };
+
+      mockGetByApartmentId.mockResolvedValue(mockPaginatedResponse);
+
+      const res = await testApp.request(
+        `/reservations/apartment/${VALID_APARTMENT_ID}?history=true`,
+        {
+          headers: { Authorization: MOCK_JWT },
+        },
+      );
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.data.length).toBe(1);
+      expect(body.data[0].guestName).toBe("Jane Smith");
+
+      expect(mockGetByApartmentId).toHaveBeenCalledWith(
+        expect.any(Object),
+        VALID_APARTMENT_ID,
+        expect.objectContaining({
+          history: true,
+        }),
+      );
+    });
+
     it("should allow admin access via apartmentGuard(true)", async () => {
       setupSuccessfulGuards("admin", "admin-uuid-1234");
 
-      mockGetByApartmentId.mockResolvedValue([]);
+      mockGetByApartmentId.mockResolvedValue({
+        data: [],
+        pagination: { page: 1, limit: 20, totalItems: 0, totalPages: 0 },
+      });
 
       const res = await testApp.request(
         `/reservations/apartment/${VALID_APARTMENT_ID}`,
@@ -196,7 +272,7 @@ describe("Reservations routes", () => {
       );
 
       expect(res.status).toBe(200);
-      expect(mockGetApartmentById).not.toHaveBeenCalled(); // Admin bypasses ownership query
+      expect(mockGetApartmentById).not.toHaveBeenCalled();
     });
 
     it("should return 403 when host tries to view another host's apartment reservations", async () => {

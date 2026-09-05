@@ -41,8 +41,6 @@ app.openapi(createApartmentRoute, async (c) => {
 
   const { owner, location } = body;
 
-  console.log("ovde");
-
   await checkExistence(db, "users", owner);
   await checkExistence(db, "locations", location);
 

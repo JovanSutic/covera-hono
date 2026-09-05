@@ -6,3 +6,4 @@ export * from "./assets";
 export * from "./apartment-shots";
 export * from "./apartment-shot-assets";
 export * from "./reservations";
+export * from "./inspections";
