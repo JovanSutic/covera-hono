@@ -1,4 +1,4 @@
-import { and, eq, gt, lt, ne, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { users } from "@/db/schema/users";
 import { locations } from "@/db/schema/locations";
 import { apartments } from "@/db/schema/apartments";
@@ -6,13 +6,15 @@ import {
   NotFoundException,
   ForbiddenException,
   ConflictException,
+  BadRequestException,
 } from "@/core/errors/error.exceptions";
-import { reservations } from "@/db";
+import { inspections, reservations } from "@/db";
 
 const schemaRegistry = {
   users: users,
   locations: locations,
   apartments: apartments,
+  reservations: reservations,
 } as const;
 
 interface OwnershipContext {
@@ -156,6 +158,68 @@ export async function assertNoOverlappingReservation(
   if (overlapping) {
     throw new ConflictException(
       "The apartment is already booked for the selected date range.",
+    );
+  }
+}
+
+export async function assertCanCreateInspection(
+  db: any,
+  reservationId: string,
+): Promise<void> {
+  const [record] = await db
+    .select({
+      reservationId: reservations.id,
+      hasPhotoProof: reservations.hasPhotoProof,
+      status: reservations.status,
+      checkInDatetime: reservations.checkInDatetime,
+      alternativeCheckInDatetime: reservations.alternativeCheckInDatetime,
+      existingInspectionId: inspections.id,
+    })
+    .from(reservations)
+    .leftJoin(inspections, eq(inspections.reservationId, reservations.id))
+    .where(eq(reservations.id, reservationId))
+    .limit(1);
+
+  // 1. Existence check
+  if (!record) {
+    throw new NotFoundException(`Reservation with ID ${reservationId}`);
+  }
+
+  // 2. Prevent duplicate inspection
+  if (record.existingInspectionId) {
+    throw new ConflictException(
+      `An inspection already exists for reservation ${reservationId}.`,
+    );
+  }
+
+  // 3. Status precondition check
+  if (record.status !== "COVERED") {
+    throw new BadRequestException(
+      `Cannot create inspection: reservation status must be 'COVERED' (current: '${record.status}').`,
+    );
+  }
+
+  // 4. Photo proof requirement check
+  if (!record.hasPhotoProof) {
+    throw new BadRequestException(
+      "Cannot create inspection: reservation does not have photo proof satisfied.",
+    );
+  }
+
+  // 5. Time window check (Up to 1 hour past effective check-in time)
+  const effectiveCheckIn =
+    record.alternativeCheckInDatetime &&
+    new Date(record.alternativeCheckInDatetime).getTime() > 0
+      ? new Date(record.alternativeCheckInDatetime)
+      : new Date(record.checkInDatetime);
+
+  const ONE_HOUR_MS = 60 * 60 * 1000;
+  const deadline = new Date(effectiveCheckIn.getTime() + ONE_HOUR_MS);
+  const now = new Date();
+
+  if (now > deadline) {
+    throw new BadRequestException(
+      `Cannot create inspection: window expired. Inspections can only be created up to 1 hour after check-in (${effectiveCheckIn.toISOString()}).`,
     );
   }
 }

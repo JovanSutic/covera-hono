@@ -5,7 +5,7 @@ import {
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
-
+import { relations } from "drizzle-orm";
 import {
   createInsertSchema,
   createSelectSchema,
@@ -13,6 +13,8 @@ import {
 
 import { users } from "./users";
 import { locations } from "./locations";
+import { apartmentShots } from "./apartment-shots";
+import { apartmentImages } from "./apartment-images";
 
 export const currencyEnum = pgEnum("currency", [
   "EUR",
@@ -54,16 +56,22 @@ export const apartments = pgTable("apartments", {
     .notNull(),
 });
 
-export type Apartment =
-  typeof apartments.$inferSelect;
+export const apartmentsRelations = relations(apartments, ({ one, many }) => ({
+  owner: one(users, {
+    fields: [apartments.owner],
+    references: [users.id],
+  }),
+  location: one(locations, {
+    fields: [apartments.location],
+    references: [locations.id],
+  }),
+  shots: many(apartmentShots),
+  images: many(apartmentImages),
+}));
 
-export type NewApartment =
-  typeof apartments.$inferInsert;
-
+export type Apartment = typeof apartments.$inferSelect;
+export type NewApartment = typeof apartments.$inferInsert;
 export type Currency = (typeof currencyEnum.enumValues)[number];
 
-export const SelectApartmentSchema =
-  createSelectSchema(apartments);
-
-export const InsertApartmentSchema =
-  createInsertSchema(apartments);
+export const SelectApartmentSchema = createSelectSchema(apartments);
+export const InsertApartmentSchema = createInsertSchema(apartments);

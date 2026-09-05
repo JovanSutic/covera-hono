@@ -4,6 +4,7 @@ import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { apartments } from "./apartments";
 import { apartmentShots } from "./apartment-shots";
 import { reservations } from "./reservations";
+import { apartmentShotAssets } from "./apartment-shot-assets";
 
 export const photoTypeEnum = pgEnum("photo_type", ["checkin_state", "damage"]);
 
@@ -69,6 +70,7 @@ export const apartmentShotsRelations = relations(
       references: [apartments.id],
     }),
     images: many(apartmentImages),
+    apartmentShotAssets: many(apartmentShotAssets),
   })
 );
 

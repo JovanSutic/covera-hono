@@ -8,7 +8,10 @@ import {
   pgEnum, 
   index 
 } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
 import { apartments } from './apartments';
+import { inspections } from './inspections';
+import { apartmentImages } from './apartment-images';
 import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
 
 export const reservationStatusEnum = pgEnum('reservation_status', [
@@ -56,6 +59,15 @@ export const reservations = pgTable(
     index('idx_reservations_dates').on(table.apartmentId, table.checkInDatetime, table.checkOutDatetime),
   ]
 );
+
+export const reservationsRelations = relations(reservations, ({ one, many }) => ({
+  apartment: one(apartments, {
+    fields: [reservations.apartmentId],
+    references: [apartments.id],
+  }),
+  inspections: many(inspections),
+  images: many(apartmentImages),
+}));
 
 export type Reservation = typeof reservations.$inferSelect;
 export type NewReservation = typeof reservations.$inferInsert;

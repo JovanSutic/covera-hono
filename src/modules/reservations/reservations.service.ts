@@ -1,4 +1,4 @@
-import { eq, desc, asc, count } from "drizzle-orm";
+import { eq, desc, asc, count, lt, gte, and } from "drizzle-orm";
 import { reservations, Reservation, NewReservation } from "@/db";
 import { Variables } from "@/types";
 import type {
@@ -18,12 +18,23 @@ export const reservationsService = {
     apartmentId: string,
     query: ReservationQuery,
   ): Promise<PaginatedReservations> {
-    const { page, limit, sortBy, order } = query;
+    const { page, limit, sortBy, order, history } = query;
     const offset = (page - 1) * limit;
 
     const sortColumn = SORTABLE_COLUMNS[sortBy] ?? reservations.checkInDatetime;
     const orderFn = order === "asc" ? asc : desc;
-    const whereClause = eq(reservations.apartmentId, apartmentId);
+
+    const now = new Date();
+
+    // Filter strategy:
+    // - history = true: return ALL reservations for the apartment (no time filter)
+    // - history = false: return active/upcoming reservations only (checkOutDatetime >= now)
+    const whereClause = history
+      ? eq(reservations.apartmentId, apartmentId)
+      : and(
+          eq(reservations.apartmentId, apartmentId),
+          gte(reservations.checkOutDatetime, now),
+        );
 
     const [countResult, data] = await Promise.all([
       db.select({ total: count() }).from(reservations).where(whereClause),
