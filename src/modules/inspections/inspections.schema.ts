@@ -25,7 +25,7 @@ export const VisitLogEventSchema = z
 
 // Base Database Model Representation
 export const InspectionSchema = SelectInspectionSchema.extend({
-  visited: z.array(VisitLogEventSchema).catch([]),
+  visited: z.array(VisitLogEventSchema).default([]),
 }).openapi("Inspection");
 
 // Nested Schemas for Hydrated GET Responses
@@ -52,7 +52,7 @@ export const InspectionParamSchema = z.object({
 });
 
 export const ReservationParamSchema = z.object({
-  reservationId: z.string().uuid().openapi({
+  reservationId: z.uuid().openapi({
     param: {
       name: "reservationId",
       in: "path",
@@ -65,7 +65,7 @@ export const ReservationParamSchema = z.object({
 // Query Parameters
 export const GetInspectionQuerySchema = z.object({
   detailed: z
-    .enum(["true", "false"])
+    .string()
     .optional()
     .transform((val) => val === "true")
     .openapi({
