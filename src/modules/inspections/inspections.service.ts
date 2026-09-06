@@ -40,18 +40,18 @@ export const inspectionsService = {
       with: {
         reservation: {
           with: {
+            images: true, // Fetch reservation photos to group into shots
             apartment: {
               with: {
                 shots: {
                   with: {
-                    apartmentShotAssets: {
+                    shotAssets: {
                       with: {
                         asset: true,
                       },
                     },
                   },
                 },
-                images: true,
               },
             },
           },
@@ -61,14 +61,21 @@ export const inspectionsService = {
 
     if (!result) return null;
 
-    const { apartment, ...reservationData } = result.reservation;
+    // Destructure images off reservation so they aren't present in reservationData
+    const {
+      apartment,
+      images: reservationImages = [],
+      ...reservationData
+    } = result.reservation;
 
-    // Flatten pivot join (apartmentShotAssets -> asset) to match ShotWithAssetsSchema
+    // Group reservation images inside their respective shots
     const shots = (apartment?.shots || []).map((shot) => {
-      const { apartmentShotAssets, ...shotData } = shot;
+      const { shotAssets, ...shotData } = shot;
       return {
         ...shotData,
-        assets: (apartmentShotAssets || []).map((pivot) => pivot.asset),
+        // Assign only the images belonging to this specific shot
+        images: reservationImages.filter((img) => img.shotId === shot.id),
+        assets: (shotAssets || []).map((pivot) => pivot.asset),
       };
     });
 
@@ -79,7 +86,6 @@ export const inspectionsService = {
       createdAt: result.createdAt,
       reservation: reservationData,
       shots,
-      images: apartment?.images || [],
     };
 
     return detailedInspection as T extends true

@@ -36,7 +36,6 @@ export const ShotWithAssetsSchema = SelectApartmentShotSchema.extend({
 export const DetailedInspectionSchema = InspectionSchema.extend({
   reservation: SelectReservationSchema,
   shots: z.array(ShotWithAssetsSchema),
-  images: z.array(SelectApartmentImageSchema),
 }).openapi("DetailedInspection");
 
 // Path Parameters

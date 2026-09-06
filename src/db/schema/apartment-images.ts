@@ -70,7 +70,7 @@ export const apartmentShotsRelations = relations(
       references: [apartments.id],
     }),
     images: many(apartmentImages),
-    apartmentShotAssets: many(apartmentShotAssets),
+    shotAssets: many(apartmentShotAssets),
   })
 );
 
