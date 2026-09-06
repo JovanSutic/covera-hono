@@ -6,10 +6,8 @@ import {
   timestamp, 
   index 
 } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
 import { apartments } from './apartments';
 import { roomLocationEnum, photoProofRequirementEnum } from './assets';
-import { apartmentShotAssets } from './apartment-shot-assets';
 import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
 
 export const apartmentShots = pgTable(
