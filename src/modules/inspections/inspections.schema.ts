@@ -31,6 +31,7 @@ export const InspectionSchema = SelectInspectionSchema.extend({
 // Nested Schemas for Hydrated GET Responses
 export const ShotWithAssetsSchema = SelectApartmentShotSchema.extend({
   assets: z.array(SelectAssetSchema),
+  images: z.array(SelectApartmentImageSchema),
 }).openapi("ShotWithAssets");
 
 export const DetailedInspectionSchema = InspectionSchema.extend({
