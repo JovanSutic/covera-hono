@@ -1,35 +1,30 @@
 import { z } from "@hono/zod-openapi";
 import { SelectReservationSchema, InsertReservationSchema } from "@/db";
+import { InspectionSchema } from "../inspections/inspections.schema";
 
+// 1. Base Reservation Schema
 export const ReservationSchema = SelectReservationSchema.openapi("Reservation");
 
+export const ReservationWithInspectionSchema = SelectReservationSchema.extend({
+  inspection: InspectionSchema.nullable().optional(),
+}).openapi("ReservationWithInspection");
+
 export const ReservationsListSchema = z
-  .array(ReservationSchema)
+  .array(ReservationWithInspectionSchema)
   .openapi("ReservationsList");
 
 // --- Pagination & Query Schemas ---
 
 export const ReservationQuerySchema = z
   .object({
-    page: z.coerce
-      .number()
-      .int()
-      .min(1)
-      .default(1)
-      .openapi({
-        description: "Page number (1-indexed)",
-        default: 1,
-      }),
-    limit: z.coerce
-      .number()
-      .int()
-      .min(1)
-      .max(100)
-      .default(20)
-      .openapi({
-        description: "Number of items per page (max 100)",
-        default: 20,
-      }),
+    page: z.coerce.number().int().min(1).default(1).openapi({
+      description: "Page number (1-indexed)",
+      default: 1,
+    }),
+    limit: z.coerce.number().int().min(1).max(100).default(20).openapi({
+      description: "Number of items per page (max 100)",
+      default: 20,
+    }),
     sortBy: z
       .enum(["checkInDatetime", "checkOutDatetime", "createdAt"])
       .default("checkInDatetime")
@@ -37,26 +32,20 @@ export const ReservationQuerySchema = z
         description: "Field to sort reservations by",
         default: "checkInDatetime",
       }),
-    order: z
-      .enum(["asc", "desc"])
-      .default("desc")
-      .openapi({
-        description: "Sort direction",
-        default: "desc",
-      }),
-    history: z.coerce
-      .boolean()
-      .default(false)
-      .openapi({
-        description: "Whether to include past reservations (history)",
-        default: false,
-      }),
+    order: z.enum(["asc", "desc"]).default("desc").openapi({
+      description: "Sort direction",
+      default: "desc",
+    }),
+    history: z.coerce.boolean().default(false).openapi({
+      description: "Whether to include past reservations (history)",
+      default: false,
+    }),
   })
   .openapi("ReservationQuery");
 
 export const PaginatedReservationsSchema = z
   .object({
-    data: z.array(ReservationSchema),
+    data: z.array(ReservationWithInspectionSchema),
     pagination: z.object({
       page: z.number().openapi({ example: 1 }),
       limit: z.number().openapi({ example: 20 }),
@@ -84,9 +73,8 @@ export const CreateReservationSchema = InsertReservationSchema.omit({
   })
   .openapi("CreateReservation");
 
-export const UpdateReservationSchema = CreateReservationSchema.partial().openapi(
-  "UpdateReservation"
-);
+export const UpdateReservationSchema =
+  CreateReservationSchema.partial().openapi("UpdateReservation");
 
 export const ReservationParamSchema = z.object({
   id: z.uuid().openapi({

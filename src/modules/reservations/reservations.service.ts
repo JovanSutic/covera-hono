@@ -38,13 +38,15 @@ export const reservationsService = {
 
     const [countResult, data] = await Promise.all([
       db.select({ total: count() }).from(reservations).where(whereClause),
-      db
-        .select()
-        .from(reservations)
-        .where(whereClause)
-        .orderBy(orderFn(sortColumn))
-        .limit(limit)
-        .offset(offset),
+      db.query.reservations.findMany({
+        where: whereClause,
+        orderBy: [orderFn(sortColumn)],
+        limit,
+        offset,
+        with: {
+          inspection: true,
+        },
+      }),
     ]);
 
     const totalItems = Number(countResult[0]?.total ?? 0);
