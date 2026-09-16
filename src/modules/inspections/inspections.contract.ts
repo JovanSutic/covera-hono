@@ -11,6 +11,7 @@ import {
 import { authGuard } from "@/middleware/authGuard";
 import { rolesGuard } from "@/middleware/roleGuard";
 import { commonErrors } from "@/core/errors/error.helpers";
+import { CreateInspectionFlagSchema, InspectionFlagSchema } from "./inspectionFlags.schema";
 
 const inspectionErrors = commonErrors.getStandardResponses("Inspection");
 
@@ -37,6 +38,36 @@ export const createInspectionRoute = createRoute({
       content: {
         "application/json": {
           schema: InspectionSchema,
+        },
+      },
+    },
+    ...inspectionErrors,
+  },
+});
+
+/**
+ * Create a new flag against an inspection (e.g. reported by guest or host)
+ */
+export const createInspectionFlagRoute = createRoute({
+  method: "post",
+  path: "/{id}/flags",
+  tags: ["Inspections"],
+  request: {
+    params: InspectionParamSchema,
+    body: {
+      content: {
+        "application/json": {
+          schema: CreateInspectionFlagSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Inspection flag created successfully",
+      content: {
+        "application/json": {
+          schema: InspectionFlagSchema,
         },
       },
     },
