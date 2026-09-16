@@ -1,20 +1,18 @@
 import { and, eq, ne, sql } from "drizzle-orm";
-import { users } from "@/db/schema/users";
-import { locations } from "@/db/schema/locations";
-import { apartments } from "@/db/schema/apartments";
 import {
   NotFoundException,
   ForbiddenException,
   ConflictException,
   BadRequestException,
 } from "@/core/errors/error.exceptions";
-import { inspections, reservations } from "@/db";
+import { inspections, reservations, users, locations, apartments } from "@/db";
 
 const schemaRegistry = {
   users: users,
   locations: locations,
   apartments: apartments,
   reservations: reservations,
+  inspections: inspections,
 } as const;
 
 interface OwnershipContext {

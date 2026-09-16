@@ -7,8 +7,9 @@ import {
   SelectAssetSchema,
   SelectApartmentImageSchema,
 } from "@/db";
+import { InspectionFlagSchema } from "./inspectionFlags.schema";
 
-// Base VisitLogEvent schema for OpenAPI documentation
+// Base VisitLogEvent schema
 export const VisitLogEventSchema = z
   .object({
     timestamp: z.string().datetime().openapi({
@@ -23,7 +24,7 @@ export const VisitLogEventSchema = z
   })
   .openapi("VisitLogEvent");
 
-// Base Database Model Representation
+// Base Database Model Representation (matches pure DB model)
 export const InspectionSchema = SelectInspectionSchema.extend({
   visited: z.array(VisitLogEventSchema).default([]),
 }).openapi("Inspection");
@@ -34,18 +35,17 @@ export const ShotWithAssetsSchema = SelectApartmentShotSchema.extend({
   images: z.array(SelectApartmentImageSchema),
 }).openapi("ShotWithAssets");
 
+// Detailed Inspection Schema with flags attached
 export const DetailedInspectionSchema = InspectionSchema.extend({
   reservation: SelectReservationSchema,
   shots: z.array(ShotWithAssetsSchema),
+  flags: z.array(InspectionFlagSchema).default([]),
 }).openapi("DetailedInspection");
 
-// Path Parameters
+// Path & Query Parameters
 export const InspectionParamSchema = z.object({
   id: z.uuid().openapi({
-    param: {
-      name: "id",
-      in: "path",
-    },
+    param: { name: "id", in: "path" },
     example: "123e4567-e89b-12d3-a456-426614174000",
     description: "Inspection unique identifier (UUID)",
   }),
@@ -53,41 +53,33 @@ export const InspectionParamSchema = z.object({
 
 export const ReservationParamSchema = z.object({
   reservationId: z.uuid().openapi({
-    param: {
-      name: "reservationId",
-      in: "path",
-    },
+    param: { name: "reservationId", in: "path" },
     example: "123e4567-e89b-12d3-a456-426614174000",
     description: "Reservation unique identifier (UUID)",
   }),
 });
 
-// Query Parameters
 export const GetInspectionQuerySchema = z.object({
   detailed: z
     .string()
     .optional()
     .transform((val) => val === "true")
     .openapi({
-      param: {
-        name: "detailed",
-        in: "query",
-      },
+      param: { name: "detailed", in: "query" },
       type: "boolean",
       description:
-        "When set to true, returns the fully hydrated inspection tree including reservation, shots, assets, and images.",
+        "When set to true, returns the fully hydrated inspection tree including reservation, shots, assets, images, and flags.",
       example: true,
     }),
 });
 
-// Request Bodies
+// Request Bodies & Responses
 export const CreateInspectionSchema = InsertInspectionSchema.omit({
   id: true,
   visited: true,
   createdAt: true,
 }).openapi("CreateInspection");
 
-// Responses
 export const PingInspectionResponseSchema = z
   .object({
     success: z.boolean().openapi({ example: true }),

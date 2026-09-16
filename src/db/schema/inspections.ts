@@ -2,6 +2,7 @@ import { pgTable, uuid, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { relations, InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { reservations } from "./reservations";
+import { inspectionFlags } from "./inspection-flags";
 
 export type VisitLogEvent = {
   timestamp: string;
@@ -17,15 +18,18 @@ export const inspections = pgTable("inspections", {
 
   visited: jsonb("accessed").$type<VisitLogEvent[]>().notNull().default([]),
 
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 // 2. Drizzle Relational Definitions
-export const inspectionsRelations = relations(inspections, ({ one }) => ({
+export const inspectionsRelations = relations(inspections, ({ one, many }) => ({
   reservation: one(reservations, {
     fields: [inspections.reservationId],
     references: [reservations.id],
   }),
+  flags: many(inspectionFlags),
 }));
 
 // 3. Base Zod Schemas

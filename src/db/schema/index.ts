@@ -7,3 +7,4 @@ export * from "./apartment-shots";
 export * from "./apartment-shot-assets";
 export * from "./reservations";
 export * from "./inspections";
+export * from "./inspection-flags";

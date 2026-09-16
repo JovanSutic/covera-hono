@@ -1,6 +1,7 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import {
   createInspectionRoute,
+  createInspectionFlagRoute,
   getInspectionByIdRoute,
   getInspectionByReservationRoute,
   pingInspectionRoute,
@@ -29,6 +30,19 @@ app.openapi(createInspectionRoute, async (c) => {
   const newInspection = await inspectionsService.create(db, body);
 
   return c.json(newInspection, 201);
+});
+
+app.openapi(createInspectionFlagRoute, async (c) => {
+  const db = c.get("db");
+  const { id } = c.req.valid("param");
+  const body = c.req.valid("json");
+
+
+  await checkExistence(db, "inspections", id);
+
+  const newFlag = await inspectionsService.createFlag(db, id, body);
+
+  return c.json(newFlag, 201);
 });
 
 app.openapi(getInspectionByIdRoute, async (c) => {
