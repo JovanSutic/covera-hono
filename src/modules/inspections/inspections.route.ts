@@ -11,7 +11,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@/core/errors/error.exceptions";
-import { assertCanCreateInspection, checkExistence } from "@/core/utils/db-validator";
+import { assertCanCreateFlag, assertCanCreateInspection, checkExistence } from "@/core/utils/db-validator";
 import { App } from "@/types";
 
 const app = new OpenAPIHono<App>();
@@ -38,7 +38,11 @@ app.openapi(createInspectionFlagRoute, async (c) => {
   const body = c.req.valid("json");
 
 
-  await checkExistence(db, "inspections", id);
+  await assertCanCreateFlag(db, {
+    inspectionId: id,
+    shotId: body.shotId  || "",
+    maxHoursWindow: 6,
+  });
 
   const newFlag = await inspectionsService.createFlag(db, id, body);
 
