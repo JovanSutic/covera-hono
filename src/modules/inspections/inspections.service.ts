@@ -107,6 +107,7 @@ export const inspectionsService = {
       ...reservationData
     } = result.reservation;
 
+    // Format shots with their mapped images & flattened assets
     const shots = (apartment?.shots || []).map((shot) => {
       const { shotAssets = [], ...shotData } = shot;
       return {
@@ -118,12 +119,24 @@ export const inspectionsService = {
       };
     });
 
+    const formattedApartment = apartment
+      ? {
+          id: apartment.id,
+          name: apartment.name,
+          address: apartment.address,
+          currency: apartment.currency,
+          externalId: apartment.externalId,
+          createdAt: apartment.createdAt,
+        }
+      : null;
+
     const detailedInspection: DetailedInspection = {
       id: result.id,
       reservationId: result.reservationId,
       visited: (result.visited as Inspection["visited"]) ?? [],
       createdAt: result.createdAt,
       reservation: reservationData,
+      apartment: formattedApartment,
       shots,
       flags: formattedFlags as DetailedInspection["flags"],
     };

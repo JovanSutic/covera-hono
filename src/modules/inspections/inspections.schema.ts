@@ -8,6 +8,7 @@ import {
   SelectApartmentImageSchema,
 } from "@/db";
 import { InspectionFlagSchema } from "./inspectionFlags.schema";
+import { ApartmentSchema } from "../apartments/apartments.schema";
 
 // Base VisitLogEvent schema
 export const VisitLogEventSchema = z
@@ -39,6 +40,14 @@ export const ShotWithAssetsSchema = SelectApartmentShotSchema.extend({
 export const DetailedInspectionSchema = InspectionSchema.extend({
   reservation: SelectReservationSchema,
   shots: z.array(ShotWithAssetsSchema),
+  apartment: ApartmentSchema.pick({
+    id: true,
+    name: true,
+    address: true,
+    currency: true,
+    externalId: true,
+    createdAt: true,
+  }).nullable(),
   flags: z.array(InspectionFlagSchema).default([]),
 }).openapi("DetailedInspection");
 

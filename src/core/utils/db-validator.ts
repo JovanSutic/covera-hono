@@ -5,7 +5,7 @@ import {
   ConflictException,
   BadRequestException,
 } from "@/core/errors/error.exceptions";
-import { inspections, reservations, users, locations, apartments } from "@/db";
+import { inspections, reservations, users, locations, apartments, inspectionFlags } from "@/db";
 
 const schemaRegistry = {
   users: users,
@@ -218,6 +218,64 @@ export async function assertCanCreateInspection(
   if (now > deadline) {
     throw new BadRequestException(
       `Cannot create inspection: window expired. Inspections can only be created up to 1 hour after check-in (${effectiveCheckIn.toISOString()}).`,
+    );
+  }
+}
+
+interface FlagCreationParams {
+  inspectionId: string;
+  shotId: string;
+  maxHoursWindow?: number; // Defaults to 12 hours if not specified
+}
+
+export async function assertCanCreateFlag(
+  db: any,
+  params: FlagCreationParams,
+): Promise<void> {
+  const { inspectionId, shotId, maxHoursWindow = 12 } = params;
+
+  const [record] = await db
+    .select({
+      inspectionId: inspections.id,
+      checkInDatetime: reservations.checkInDatetime,
+      alternativeCheckInDatetime: reservations.alternativeCheckInDatetime,
+      existingFlagId: inspectionFlags.id,
+    })
+    .from(inspections)
+    .innerJoin(reservations, eq(inspections.reservationId, reservations.id))
+    .leftJoin(
+      inspectionFlags,
+      and(
+        eq(inspectionFlags.inspectionId, inspections.id),
+        eq(inspectionFlags.shotId, shotId),
+      ),
+    )
+    .where(eq(inspections.id, inspectionId))
+    .limit(1);
+
+  if (!record) {
+    throw new NotFoundException(`Inspection with ID ${inspectionId}`);
+  }
+
+  if (record.existingFlagId) {
+    throw new ConflictException(
+      `A flag has already been submitted for shot ${shotId} under inspection ${inspectionId}.`,
+    );
+  }
+
+  const effectiveCheckIn =
+    record.alternativeCheckInDatetime &&
+    isRealDate(record.alternativeCheckInDatetime)
+      ? new Date(record.alternativeCheckInDatetime)
+      : new Date(record.checkInDatetime);
+
+  const windowMs = maxHoursWindow * 60 * 60 * 1000;
+  const deadline = new Date(effectiveCheckIn.getTime() + windowMs);
+  const now = new Date();
+
+  if (now > deadline) {
+    throw new BadRequestException(
+      `Cannot submit flag: time window expired. Flags can only be created up to ${maxHoursWindow} hours after check-in (${effectiveCheckIn.toISOString()}).`,
     );
   }
 }
