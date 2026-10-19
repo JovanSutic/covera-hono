@@ -1,9 +1,5 @@
-import { eq, inArray, and } from "drizzle-orm";
-import {
-  apartmentShots,
-  apartmentShotAssets,
-  ApartmentShot,
-} from "@/db";
+import { eq, inArray, and, lte } from "drizzle-orm";
+import { apartmentShots, apartmentShotAssets, ApartmentShot, assets } from "@/db";
 import { Variables } from "@/types";
 import { SyncShotItemSchema } from "./apartment_shots.schema";
 import { z } from "@hono/zod-openapi";
@@ -17,12 +13,19 @@ export interface ApartmentShotWithAssets extends ApartmentShot {
 export const apartmentShotsService = {
   async getByApartmentId(
     db: Variables["db"],
-    apartmentId: string
+    apartmentId: string,
+    cutoffDate?: Date,
   ): Promise<ApartmentShotWithAssets[]> {
+    // 1. Fetch shots for the apartment (optionally filtered by cutoffDate)
     const shots = await db
       .select()
       .from(apartmentShots)
-      .where(eq(apartmentShots.apartmentId, apartmentId))
+      .where(
+        and(
+          eq(apartmentShots.apartmentId, apartmentId),
+          cutoffDate ? lte(apartmentShots.createdAt, cutoffDate) : undefined,
+        ),
+      )
       .orderBy(apartmentShots.roomLocation, apartmentShots.createdAt);
 
     if (shots.length === 0) {
@@ -31,16 +34,22 @@ export const apartmentShotsService = {
 
     const shotIds = shots.map((s) => s.id);
 
-    // Fetch all junction mappings for these shots
+    // 2. Fetch junction mappings joined with assets to enforce asset createdAt cutoff
     const junctions = await db
       .select({
         shotId: apartmentShotAssets.shotId,
         assetId: apartmentShotAssets.assetId,
       })
       .from(apartmentShotAssets)
-      .where(inArray(apartmentShotAssets.shotId, shotIds));
+      .innerJoin(assets, eq(assets.id, apartmentShotAssets.assetId))
+      .where(
+        and(
+          inArray(apartmentShotAssets.shotId, shotIds),
+          cutoffDate ? lte(assets.createdAt, cutoffDate) : undefined,
+        ),
+      );
 
-    // Map assetIds to their corresponding shots
+    // 3. Map filtered assetIds to their corresponding shots
     const assetMap = new Map<string, string[]>();
     for (const j of junctions) {
       const existing = assetMap.get(j.shotId) || [];
@@ -63,7 +72,7 @@ export const apartmentShotsService = {
   async syncShots(
     db: Variables["db"],
     apartmentId: string,
-    incomingShots: SyncShotItem[]
+    incomingShots: SyncShotItem[],
   ): Promise<ApartmentShotWithAssets[]> {
     return await db.transaction(async (tx) => {
       // 1. Fetch existing shots in DB for this apartment
@@ -76,13 +85,13 @@ export const apartmentShotsService = {
 
       // Separate incoming payload into items to update vs items to insert
       const incomingWithId = incomingShots.filter(
-        (s): s is SyncShotItem & { id: string } => Boolean(s.id)
+        (s): s is SyncShotItem & { id: string } => Boolean(s.id),
       );
       const incomingIds = incomingWithId.map((s) => s.id);
 
       // 2. Prune: Delete shots from DB that are not present in incoming payload
       const shotsToDelete = existingShotIds.filter(
-        (id) => !incomingIds.includes(id)
+        (id) => !incomingIds.includes(id),
       );
 
       if (shotsToDelete.length > 0) {
@@ -115,8 +124,8 @@ export const apartmentShotsService = {
             .where(
               and(
                 eq(apartmentShots.id, item.id),
-                eq(apartmentShots.apartmentId, apartmentId)
-              )
+                eq(apartmentShots.apartmentId, apartmentId),
+              ),
             )
             .returning({ id: apartmentShots.id });
 
@@ -148,12 +157,12 @@ export const apartmentShotsService = {
 
         // Assets to link (in payload, not in DB)
         const assetsToInsert = desiredAssetIds.filter(
-          (aId) => !currentAssetIds.includes(aId)
+          (aId) => !currentAssetIds.includes(aId),
         );
 
         // Assets to unlink (in DB, not in payload)
         const assetsToDelete = currentAssetIds.filter(
-          (aId) => !desiredAssetIds.includes(aId)
+          (aId) => !desiredAssetIds.includes(aId),
         );
 
         if (assetsToDelete.length > 0) {
@@ -162,8 +171,8 @@ export const apartmentShotsService = {
             .where(
               and(
                 eq(apartmentShotAssets.shotId, shotId),
-                inArray(apartmentShotAssets.assetId, assetsToDelete)
-              )
+                inArray(apartmentShotAssets.assetId, assetsToDelete),
+              ),
             );
         }
 
@@ -172,7 +181,7 @@ export const apartmentShotsService = {
             assetsToInsert.map((assetId) => ({
               shotId,
               assetId,
-            }))
+            })),
           );
         }
       }

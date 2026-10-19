@@ -3,6 +3,7 @@ import { createRoute } from "@hono/zod-openapi";
 import {
   ApartmentParamSchema,
   ApartmentShotsListSchema,
+  GetShotsQuerySchema,
   SyncApartmentShotsSchema,
 } from "./apartment_shots.schema";
 import { authGuard } from "@/middleware/authGuard";
@@ -18,6 +19,7 @@ export const getShotsByApartmentRoute = createRoute({
   middleware: [authGuard, rolesGuard(["admin", "host"])] as const,
   request: {
     params: ApartmentParamSchema,
+    query: GetShotsQuerySchema,
   },
   responses: {
     200: {

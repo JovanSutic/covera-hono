@@ -2,16 +2,23 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTestApp } from "@/core/utils/test-factory";
 import apartmentShotsApp from "./apartment_shots.route";
 import { usersService } from "../users/users.service";
+import { ConflictException } from "@/core/errors/error.exceptions";
 
-const { mockGetByApartmentId, mockSyncShots, mockCheckExistence } = vi.hoisted(
-  () => {
-    return {
-      mockGetByApartmentId: vi.fn(),
-      mockSyncShots: vi.fn(),
-      mockCheckExistence: vi.fn(),
-    };
-  },
-);
+const {
+  mockGetByApartmentId,
+  mockSyncShots,
+  mockCheckExistence,
+  mockAssertCanModifyApartmentShots,
+  mockAssertCanModifyAsset,
+} = vi.hoisted(() => {
+  return {
+    mockGetByApartmentId: vi.fn(),
+    mockSyncShots: vi.fn(),
+    mockCheckExistence: vi.fn(),
+    mockAssertCanModifyApartmentShots: vi.fn(),
+    mockAssertCanModifyAsset: vi.fn(),
+  };
+});
 
 vi.mock("./apartment_shots.service", () => ({
   apartmentShotsService: {
@@ -30,15 +37,43 @@ const mockedUserService = usersService as unknown as {
   getByAuthId: ReturnType<typeof vi.fn>;
 };
 
+// Mock all validator functions imported from db-validator
 vi.mock("@/core/utils/db-validator", () => ({
   checkExistence: mockCheckExistence,
+  assertCanModifyApartmentShots: mockAssertCanModifyApartmentShots,
+  assertCanModifyAsset: mockAssertCanModifyAsset,
 }));
+
+// Mock direct database imports for inline reservation lookups
+const mockReservationRecord = { createdAt: new Date().toISOString() };
+
+vi.mock("@/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/db")>();
+  return {
+    ...actual,
+    db: {
+      select: vi.fn().mockImplementation(() => ({
+        from: vi.fn().mockImplementation(() => ({
+          where: vi.fn().mockImplementation(() => ({
+            limit: vi.fn().mockResolvedValue([mockReservationRecord]),
+            then: (onfulfilled: any) =>
+              Promise.resolve([mockReservationRecord]).then(onfulfilled),
+          })),
+          limit: vi.fn().mockResolvedValue([mockReservationRecord]),
+          then: (onfulfilled: any) =>
+            Promise.resolve([mockReservationRecord]).then(onfulfilled),
+        })),
+      })),
+    },
+  };
+});
 
 const mockGetUser = vi.fn();
 const mockUpdateUserById = vi.fn();
 
 const VALID_UUID = "550e8400-e29b-41d4-a716-446655440000";
 const VALID_APARTMENT_ID = "660e8400-e29b-41d4-a716-446655440000";
+const VALID_RESERVATION_ID = "990e8400-e29b-41d4-a716-446655440000";
 const VALID_ASSET_ID = "770e8400-e29b-41d4-a716-446655440000";
 const MOCK_JWT = "Bearer validation-mock-token-string";
 
@@ -59,12 +94,36 @@ export const setTestUser = (
   };
 };
 
+const mockDbChain = {
+  select: vi.fn().mockImplementation(() => ({
+    from: vi.fn().mockImplementation(() => ({
+      where: vi.fn().mockImplementation(() => ({
+        limit: vi.fn().mockResolvedValue([mockReservationRecord]),
+        then: (onfulfilled: any) =>
+          Promise.resolve([mockReservationRecord]).then(onfulfilled),
+      })),
+      limit: vi.fn().mockResolvedValue([mockReservationRecord]),
+      then: (onfulfilled: any) =>
+        Promise.resolve([mockReservationRecord]).then(onfulfilled),
+    })),
+  })),
+};
+
 const testApp = createTestApp({
   contextOverrides: () => ({
     getUser: mockGetUser,
     updateUserById: mockUpdateUserById,
     authUser: currentTestUser,
+    db: mockDbChain as any,
   }),
+});
+
+// Map domain ConflictException to 409 status code in test app environment
+testApp.onError((err, c) => {
+  if (err instanceof ConflictException) {
+    return c.json({ message: err.message }, 409);
+  }
+  return c.json({ message: err.message || "Internal Error" }, 500);
 });
 
 testApp.route("/apartment-shots", apartmentShotsApp);
@@ -100,6 +159,8 @@ describe("Apartment Shots routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCheckExistence.mockResolvedValue(true);
+    mockAssertCanModifyApartmentShots.mockResolvedValue(undefined);
+    mockAssertCanModifyAsset.mockResolvedValue(undefined);
     setupSuccessfulGuards("host");
   });
 
@@ -138,6 +199,29 @@ describe("Apartment Shots routes", () => {
         expect.anything(),
         "apartments",
         VALID_APARTMENT_ID,
+      );
+      expect(mockGetByApartmentId).toHaveBeenCalledWith(
+        expect.anything(),
+        VALID_APARTMENT_ID,
+        undefined,
+      );
+    });
+
+    it("should pass cutoffDate from reservation when reservationId query param is provided", async () => {
+      mockGetByApartmentId.mockResolvedValue([]);
+
+      const res = await testApp.request(
+        `/apartment-shots/apartment/${VALID_APARTMENT_ID}?reservationId=${VALID_RESERVATION_ID}`,
+        {
+          headers: { Authorization: MOCK_JWT },
+        },
+      );
+
+      expect(res.status).toBe(200);
+      expect(mockGetByApartmentId).toHaveBeenCalledWith(
+        expect.anything(),
+        VALID_APARTMENT_ID,
+        expect.any(Date),
       );
     });
 
@@ -212,11 +296,38 @@ describe("Apartment Shots routes", () => {
         "apartments",
         VALID_APARTMENT_ID,
       );
+      expect(mockAssertCanModifyApartmentShots).toHaveBeenCalledWith(
+        expect.anything(),
+        VALID_APARTMENT_ID,
+      );
       expect(mockSyncShots).toHaveBeenCalledWith(
         expect.anything(),
         VALID_APARTMENT_ID,
         syncPayload,
       );
+    });
+
+    it("should return 409 when assertCanModifyApartmentShots guard rejects", async () => {
+      mockAssertCanModifyApartmentShots.mockRejectedValue(
+        new ConflictException(
+          `Cannot sync or modify shots for apartment '${VALID_APARTMENT_ID}': there is an active reservation with photo proof locked.`,
+        ),
+      );
+
+      const res = await testApp.request(
+        `/apartment-shots/apartment/${VALID_APARTMENT_ID}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: MOCK_JWT,
+          },
+          body: JSON.stringify({ shots: [] }),
+        },
+      );
+
+      expect(res.status).toBe(409);
+      expect(mockSyncShots).not.toHaveBeenCalled();
     });
 
     it("should return 400 when sync payload items fail validation", async () => {
@@ -324,7 +435,7 @@ describe("Apartment Shots routes", () => {
           shotType: "SWEEP_ONLY",
           title: "TV & Soundbar",
           instructions: "Take shot of TV and soundbar together",
-          assetIds: [VALID_ASSET_ID, NEW_ASSET_ID_2], // Attached a second asset
+          assetIds: [VALID_ASSET_ID, NEW_ASSET_ID_2],
         },
       ];
 

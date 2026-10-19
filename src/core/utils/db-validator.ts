@@ -1,11 +1,11 @@
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import {
   NotFoundException,
   ForbiddenException,
   ConflictException,
   BadRequestException,
 } from "@/core/errors/error.exceptions";
-import { inspections, reservations, users, locations, apartments, inspectionFlags } from "@/db";
+import { inspections, reservations, users, locations, apartments, inspectionFlags, assets, apartmentShotAssets, apartmentShots } from "@/db";
 
 const schemaRegistry = {
   users: users,
@@ -13,6 +13,7 @@ const schemaRegistry = {
   apartments: apartments,
   reservations: reservations,
   inspections: inspections,
+  assets: assets,
 } as const;
 
 interface OwnershipContext {
@@ -276,6 +277,93 @@ export async function assertCanCreateFlag(
   if (now > deadline) {
     throw new BadRequestException(
       `Cannot submit flag: time window expired. Flags can only be created up to ${maxHoursWindow} hours after check-in (${effectiveCheckIn.toISOString()}).`,
+    );
+  }
+}
+
+/**
+ * Asserts that an Asset can be updated or deleted.
+ * Blocks modifications if the asset is linked to a shot under a reservation
+ * that is COVERED or DISPUTED and has an active or future check-in window.
+ */
+export async function assertCanModifyAsset(
+  db: any,
+  assetId: string,
+  action: "update" | "delete" = "delete",
+): Promise<void> {
+  const [lockedRecord] = await db
+    .select({
+      assetId: assets.id,
+      reservationId: reservations.id,
+      status: reservations.status,
+    })
+    .from(assets)
+    .innerJoin(
+      apartmentShotAssets,
+      eq(apartmentShotAssets.assetId, assets.id),
+    )
+    .innerJoin(
+      apartmentShots,
+      eq(apartmentShots.id, apartmentShotAssets.shotId),
+    )
+    .innerJoin(
+      reservations,
+      eq(reservations.apartmentId, assets.apartmentId),
+    )
+    .where(
+      and(
+        eq(assets.id, assetId),
+        inArray(reservations.status, ["COVERED", "DISPUTED"]),
+        // Ensures check-in hasn't expired / reservation cycle is current or future
+        sql`COALESCE(
+          CASE WHEN ${reservations.alternativeCheckInDatetime} > '1970-01-02'::timestamptz 
+               THEN ${reservations.alternativeCheckInDatetime} 
+               ELSE NULL END,
+          ${reservations.checkInDatetime}
+        ) >= NOW()`
+      ),
+    )
+    .limit(1);
+
+  if (lockedRecord) {
+    throw new ConflictException(
+      `Cannot ${action} asset '${assetId}': it is linked to a shot with locked photo proof for an upcoming or active reservation (Reservation Status: ${lockedRecord.status}).`,
+    );
+  }
+}
+
+/**
+ * Asserts that shots belonging to an apartment can be bulk-synced, modified, or removed.
+ * Blocks operations if the apartment has any upcoming/active reservations in 'COVERED' or 'DISPUTED' status.
+ */
+export async function assertCanModifyApartmentShots(
+  db: any,
+  apartmentId: string,
+): Promise<void> {
+  const [lockedRecord] = await db
+    .select({
+      apartmentId: reservations.apartmentId,
+      status: reservations.status,
+    })
+    .from(reservations)
+    .where(
+      and(
+        eq(reservations.apartmentId, apartmentId),
+        inArray(reservations.status, ["COVERED", "DISPUTED"]),
+        // Ensures check-in is in the future or currently active
+        sql`COALESCE(
+          CASE WHEN ${reservations.alternativeCheckInDatetime} > '1970-01-02'::timestamptz 
+               THEN ${reservations.alternativeCheckInDatetime} 
+               ELSE NULL END,
+          ${reservations.checkInDatetime}
+        ) >= NOW()`
+      ),
+    )
+    .limit(1);
+
+  if (lockedRecord) {
+    throw new ConflictException(
+      `Cannot sync or modify shots for apartment '${apartmentId}': there is an upcoming reservation with locked photo proof (Reservation Status: ${lockedRecord.status}).`,
     );
   }
 }
