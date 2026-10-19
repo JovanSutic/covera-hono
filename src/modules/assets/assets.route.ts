@@ -6,7 +6,7 @@ import {
 } from "./assets.contract";
 import { assetsService } from "./assets.service";
 import { NotFoundException } from "@/core/errors/error.exceptions";
-import { checkExistence } from "@/core/utils/db-validator";
+import { assertCanModifyAsset, checkExistence } from "@/core/utils/db-validator";
 import { App } from "@/types";
 
 const app = new OpenAPIHono<App>();
@@ -36,6 +36,9 @@ app.openapi(createAssetRoute, async (c) => {
 app.openapi(deleteAssetRoute, async (c) => {
   const db = c.get("db");
   const { id } = c.req.valid("param");
+
+  await checkExistence(db, "assets", id);
+  await assertCanModifyAsset(db, id, "delete");
 
   const result = await assetsService.delete(db, id);
 

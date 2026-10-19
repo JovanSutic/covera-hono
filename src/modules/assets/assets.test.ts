@@ -2,20 +2,25 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTestApp } from "@/core/utils/test-factory";
 import assetsApp from "./assets.route";
 import { assetsService } from "./assets.service";
-import { checkExistence } from "@/core/utils/db-validator";
 import { usersService } from "../users/users.service";
+import { ConflictException, NotFoundException } from "@/core/errors/error.exceptions";
+import { HTTPException } from "hono/http-exception";
 
 const {
   mockGetByApartmentId,
   mockCreate,
   mockDelete,
   mockCheckExistence,
+  mockAssertCanModifyAsset,
+  mockAssertCanModifyApartmentShots,
 } = vi.hoisted(() => {
   return {
     mockGetByApartmentId: vi.fn(),
     mockCreate: vi.fn(),
     mockDelete: vi.fn(),
     mockCheckExistence: vi.fn(),
+    mockAssertCanModifyAsset: vi.fn(),
+    mockAssertCanModifyApartmentShots: vi.fn(),
   };
 });
 
@@ -37,8 +42,11 @@ const mockedUserService = usersService as unknown as {
   getByAuthId: ReturnType<typeof vi.fn>;
 };
 
+// Mock all validator functions imported from db-validator
 vi.mock("@/core/utils/db-validator", () => ({
   checkExistence: mockCheckExistence,
+  assertCanModifyAsset: mockAssertCanModifyAsset,
+  assertCanModifyApartmentShots: mockAssertCanModifyApartmentShots,
 }));
 
 const mockGetUser = vi.fn();
@@ -69,8 +77,22 @@ const testApp = createTestApp({
   contextOverrides: () => ({
     getUser: mockGetUser,
     updateUserById: mockUpdateUserById,
-    authUser: currentTestUser, // Matches apartments.test pattern
+    authUser: currentTestUser,
   }),
+});
+
+// Map domain exceptions to appropriate status codes in test app environment
+testApp.onError((err, c) => {
+  if (err instanceof ConflictException) {
+    return c.json({ message: err.message }, 409);
+  }
+  if (err instanceof NotFoundException) {
+    return c.json({ message: err.message }, 404);
+  }
+  if (err instanceof HTTPException) {
+    return err.getResponse();
+  }
+  return c.json({ message: err.message || "Internal Error" }, 500);
 });
 
 testApp.route("/assets", assetsApp);
@@ -106,6 +128,8 @@ describe("Assets routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCheckExistence.mockResolvedValue(true);
+    mockAssertCanModifyAsset.mockResolvedValue(undefined);
+    mockAssertCanModifyApartmentShots.mockResolvedValue(undefined);
     setupSuccessfulGuards("host");
   });
 
@@ -246,10 +270,39 @@ describe("Assets routes", () => {
       const data = await res.json();
       expect(data.success).toBe(true);
       expect(data.id).toBe(VALID_UUID);
+      expect(mockCheckExistence).toHaveBeenCalledWith(
+        expect.anything(),
+        "assets",
+        VALID_UUID,
+      );
+      expect(mockAssertCanModifyAsset).toHaveBeenCalledWith(
+        expect.anything(),
+        VALID_UUID,
+        "delete",
+      );
+    });
+
+    it("should return 409 when asset deletion is blocked by active photo proof guard", async () => {
+      mockAssertCanModifyAsset.mockRejectedValue(
+        new ConflictException(
+          `Cannot delete asset '${VALID_UUID}': it is linked to a shot with locked photo proof.`,
+        ),
+      );
+
+      const res = await testApp.request(`/assets/${VALID_UUID}`, {
+        method: "DELETE",
+        headers: { Authorization: MOCK_JWT },
+      });
+
+      expect(res.status).toBe(409);
+      expect(mockDelete).not.toHaveBeenCalled();
     });
 
     it("should return 404 if asset to delete is not found", async () => {
-      mockDelete.mockResolvedValue(null);
+      // Simulate checkExistence failing when the asset does not exist
+      mockCheckExistence.mockRejectedValue(
+        new NotFoundException("Asset not found"),
+      );
 
       const res = await testApp.request(`/assets/${VALID_UUID}`, {
         method: "DELETE",
