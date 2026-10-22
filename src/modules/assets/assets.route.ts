@@ -6,7 +6,10 @@ import {
 } from "./assets.contract";
 import { assetsService } from "./assets.service";
 import { NotFoundException } from "@/core/errors/error.exceptions";
-import { assertCanModifyAsset, checkExistence } from "@/core/utils/db-validator";
+import {
+  assertCanModifyAsset,
+  checkExistence,
+} from "@/core/utils/db-validator";
 import { App } from "@/types";
 
 const app = new OpenAPIHono<App>();
@@ -27,6 +30,7 @@ app.openapi(createAssetRoute, async (c) => {
   const body = c.req.valid("json");
 
   await checkExistence(db, "apartments", body.apartmentId);
+  await checkExistence(db, "assetTypes", body.assetTypeId);
 
   const newAsset = await assetsService.create(db, body);
 
