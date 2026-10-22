@@ -5,7 +5,7 @@ import {
   ConflictException,
   BadRequestException,
 } from "@/core/errors/error.exceptions";
-import { inspections, reservations, users, locations, apartments, inspectionFlags, assets, apartmentShotAssets, apartmentShots } from "@/db";
+import { inspections, reservations, users, locations, apartments, inspectionFlags, assets, apartmentShotAssets, apartmentShots, assetTypes } from "@/db";
 
 const schemaRegistry = {
   users: users,
@@ -14,6 +14,7 @@ const schemaRegistry = {
   reservations: reservations,
   inspections: inspections,
   assets: assets,
+  assetTypes: assetTypes
 } as const;
 
 interface OwnershipContext {

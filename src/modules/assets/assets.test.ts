@@ -3,7 +3,10 @@ import { createTestApp } from "@/core/utils/test-factory";
 import assetsApp from "./assets.route";
 import { assetsService } from "./assets.service";
 import { usersService } from "../users/users.service";
-import { ConflictException, NotFoundException } from "@/core/errors/error.exceptions";
+import {
+  ConflictException,
+  NotFoundException,
+} from "@/core/errors/error.exceptions";
 import { HTTPException } from "hono/http-exception";
 
 const {
@@ -42,7 +45,7 @@ const mockedUserService = usersService as unknown as {
   getByAuthId: ReturnType<typeof vi.fn>;
 };
 
-// Mock all validator functions imported from db-validator
+// Mock validator functions imported from db-validator
 vi.mock("@/core/utils/db-validator", () => ({
   checkExistence: mockCheckExistence,
   assertCanModifyAsset: mockAssertCanModifyAsset,
@@ -54,6 +57,7 @@ const mockUpdateUserById = vi.fn();
 
 const VALID_UUID = "550e8400-e29b-41d4-a716-446655440000";
 const VALID_APARTMENT_ID = "660e8400-e29b-41d4-a716-446655440000";
+const VALID_ASSET_TYPE_ID = "770e8400-e29b-41d4-a716-446655440000";
 const MOCK_JWT = "Bearer validation-mock-token-string";
 
 let currentTestUser = {
@@ -139,15 +143,21 @@ describe("Assets routes", () => {
         {
           id: VALID_UUID,
           apartmentId: VALID_APARTMENT_ID,
-          name: "Smart Lock",
-          category: "Electronics",
-          roomLocation: "Entrance",
+          assetTypeId: VALID_ASSET_TYPE_ID,
+          roomLocation: "ENTRANCE_HALLWAY",
+          ageBracket: "ONE_TO_THREE_YEARS",
+          valueTier: "PREMIUM",
           description: "Front door keypad lock",
           photoProofRequirement: "FUNCTIONAL_ACTION",
           approximateValueCents: 25000,
           isActive: true,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
+          asset_type: {
+            id: VALID_ASSET_TYPE_ID,
+            code: "SMART_LOCK",
+            category: "ELECTRONICS",
+          },
         },
       ];
 
@@ -164,7 +174,7 @@ describe("Assets routes", () => {
       const data = await res.json();
       expect(Array.isArray(data)).toBe(true);
       expect(data.length).toBe(1);
-      expect(data[0].name).toBe("Smart Lock");
+      expect(data[0].asset_type.code).toBe("SMART_LOCK");
       expect(mockCheckExistence).toHaveBeenCalledWith(
         expect.anything(),
         "apartments",
@@ -197,10 +207,13 @@ describe("Assets routes", () => {
     it("should create an asset successfully", async () => {
       const input = {
         apartmentId: VALID_APARTMENT_ID,
-        name: "Coffee Machine",
+        assetTypeId: VALID_ASSET_TYPE_ID,
+        name: "Nespresso Coffee Machine", // Required by InsertAssetSchema
         category: "APPLIANCES_SMALL",
         roomLocation: "KITCHEN",
-        description: "Nespresso Machine",
+        ageBracket: "ONE_TO_THREE_YEARS",
+        valueTier: "STANDARD",
+        description: "Nespresso Coffee Machine",
         photoProofRequirement: "CLOSEUP",
         approximateValueCents: 15000,
       };
@@ -211,6 +224,11 @@ describe("Assets routes", () => {
         isActive: true,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        asset_type: {
+          id: VALID_ASSET_TYPE_ID,
+          code: "COFFEE_MACHINE",
+          category: "APPLIANCES_SMALL",
+        },
       };
 
       mockCreate.mockResolvedValue(mockCreatedAsset);
@@ -227,18 +245,23 @@ describe("Assets routes", () => {
       expect(res.status).toBe(201);
       const data = await res.json();
       expect(data.id).toBe(VALID_UUID);
-      expect(data.name).toBe("Coffee Machine");
+      expect(data.asset_type.code).toBe("COFFEE_MACHINE");
       expect(mockCheckExistence).toHaveBeenCalledWith(
         expect.anything(),
         "apartments",
         VALID_APARTMENT_ID,
+      );
+      expect(mockCheckExistence).toHaveBeenCalledWith(
+        expect.anything(),
+        "assetTypes",
+        VALID_ASSET_TYPE_ID,
       );
     });
 
     it("should return 400 when missing required fields", async () => {
       const invalidInput = {
         apartmentId: VALID_APARTMENT_ID,
-        category: "Appliances",
+        // Missing assetTypeId, ageBracket, and valueTier
       };
 
       const res = await testApp.request("/assets", {
@@ -299,7 +322,6 @@ describe("Assets routes", () => {
     });
 
     it("should return 404 if asset to delete is not found", async () => {
-      // Simulate checkExistence failing when the asset does not exist
       mockCheckExistence.mockRejectedValue(
         new NotFoundException("Asset not found"),
       );

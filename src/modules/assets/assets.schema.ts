@@ -2,10 +2,15 @@ import { z } from "@hono/zod-openapi";
 
 import {
   SelectAssetSchema,
+  SelectAssetTypeSchema,
   InsertAssetSchema,
 } from "@/db";
 
-export const AssetSchema = SelectAssetSchema.openapi("Asset");
+export const AssetTypeSchema = SelectAssetTypeSchema.openapi("AssetType");
+
+export const AssetSchema = SelectAssetSchema.extend({
+  asset_type: AssetTypeSchema,
+}).openapi("Asset");
 
 export const AssetsListSchema = z.array(AssetSchema).openapi("AssetsList");
 
@@ -13,6 +18,7 @@ export const CreateAssetSchema = InsertAssetSchema.omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  isActive: true,
 }).openapi("CreateAsset");
 
 export const AssetParamSchema = z.object({
@@ -39,3 +45,7 @@ export const DeleteAssetResponseSchema = z.object({
   success: z.boolean(),
   id: z.uuid(),
 }).openapi("DeleteAssetResponse");
+
+
+// Export the inferred Zod type instead of Drizzle's $inferSelect
+export type Asset = z.infer<typeof AssetSchema>;

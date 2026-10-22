@@ -7,7 +7,7 @@ import {
   index 
 } from 'drizzle-orm/pg-core';
 import { apartments } from './apartments';
-import { roomLocationEnum, photoProofRequirementEnum } from './assets';
+import { roomLocationEnum, photoProofRequirementEnum } from './asset-enums';
 import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
 
 export const apartmentShots = pgTable(
