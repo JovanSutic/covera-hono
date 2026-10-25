@@ -1,9 +1,8 @@
-import { OpenAPIHono } from "@hono/zod-openapi";
+import { createModuleApp } from "@/core/utils/module-app";
 import { getLocationsRoute, createLocationRoute } from "./locations.contract";
 import { locationsService } from "./locations.service";
-import { App } from "@/types";
 
-const app = new OpenAPIHono<App>();
+const app = createModuleApp();
 
 app.openapi(getLocationsRoute, async (c) => {
   const db = c.get("db");

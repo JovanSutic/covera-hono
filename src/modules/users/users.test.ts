@@ -114,6 +114,10 @@ describe("Users routes", () => {
 
     const res = await testApp.request("/users");
     expect(res.status).toBe(401);
+
+    const body: any = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe("AUTH_TOKEN_MISSING");
   });
 
   it("GET /users should return 403 if user lacks admin/manager permissions or isn't confirmed", async () => {
@@ -133,6 +137,10 @@ describe("Users routes", () => {
       headers: { Authorization: MOCK_JWT },
     });
     expect(res.status).toBe(403);
+
+    const body: any = await res.json();
+    expect(body.error.code).toBe("FORBIDDEN_ROLE");
+    expect(body.error.message).toMatch(/only available to: admin/);
   });
 
   it("GET /users/:id should return single user", async () => {
@@ -164,6 +172,11 @@ describe("Users routes", () => {
       headers: { Authorization: MOCK_JWT },
     });
     expect(res.status).toBe(404);
+
+    const body: any = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe("USER_NOT_FOUND");
+    expect(body.error.message).toBe("User does not exist.");
   });
 
   it("POST /users should create a user", async () => {
@@ -209,6 +222,29 @@ describe("Users routes", () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.success).toBe(true);
+  });
+
+  it("POST /users/:id/invite keeps provider text out of the client-facing message", async () => {
+    setupSuccessfulGuards();
+    mockedService.invite.mockRejectedValue(
+      new Error("Supabase: 422 email_address_invalid"),
+    );
+
+    const res = await testApp.request(`/users/${VALID_UUID}/invite`, {
+      method: "POST",
+      headers: { Authorization: MOCK_JWT },
+    });
+
+    expect(res.status).toBe(400);
+
+    const body: any = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe("INVITATION_ERROR");
+    expect(body.error.message).toBe(
+      "The invitation email could not be sent. Please check the email address and try again.",
+    );
+    expect(body.error.message).not.toMatch(/Supabase|422|email_address_invalid/);
+    expect(body.error.meta?.driver).toBe("Supabase: 422 email_address_invalid");
   });
 
   it("POST /update-password should change credentials and return 200", async () => {

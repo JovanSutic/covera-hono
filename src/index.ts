@@ -11,16 +11,11 @@ import { dbMiddleware } from "./middleware/db";
 import { App } from "./types";
 import { supabaseMiddleware } from "./middleware/supabase";
 import { s3Middleware } from "./middleware/s3";
-import { formatValidationError, renderError, toErrorResponse } from "./core/errors/error.handler";
+import { renderError, toErrorResponse, validationHook } from "./core/errors/error.handler";
 import { cors } from "hono/cors";
 
 const app = new OpenAPIHono<App>({
-  defaultHook: (result, c) => {
-    if (!result.success) {
-      const { status, body } = formatValidationError(result as any);
-      return c.json(body, status);
-    }
-  },
+  defaultHook: validationHook,
 });
 
 app.onError((err, c) => {

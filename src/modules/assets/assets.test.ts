@@ -3,10 +3,7 @@ import { createTestApp } from "@/core/utils/test-factory";
 import assetsApp from "./assets.route";
 import { assetsService } from "./assets.service";
 import { usersService } from "../users/users.service";
-import {
-  ConflictException,
-  NotFoundException,
-} from "@/core/errors/error.exceptions";
+import { assetErrors } from "./assets.errors";
 
 const {
   mockGetByApartmentId,
@@ -290,33 +287,29 @@ describe("Assets routes", () => {
       );
     });
 
-    it("should return 409 when asset deletion is blocked by active photo proof guard", async () => {
-      mockAssertCanModifyAsset.mockRejectedValue(
-        new ConflictException(
-          `Cannot delete asset '${VALID_UUID}': it is linked to a shot with locked photo proof.`,
-        ),
-      );
+    it("should return 409 with ASSET_LOCKED when deletion is blocked", async () => {
+      mockAssertCanModifyAsset.mockRejectedValue(assetErrors.locked({ action: "delete" }));
 
       const res = await testApp.request(`/assets/${VALID_UUID}`, {
-        method: "DELETE",
-        headers: { Authorization: MOCK_JWT },
+        method: "DELETE", headers: { Authorization: MOCK_JWT },
       });
 
       expect(res.status).toBe(409);
+      const body: any = await res.json();
+      expect(body.error.code).toBe("ASSET_LOCKED");
+      expect(body.error.message).toMatch(/cannot be deleted because/);
       expect(mockDelete).not.toHaveBeenCalled();
     });
 
-    it("should return 404 if asset to delete is not found", async () => {
-      mockCheckExistence.mockRejectedValue(
-        new NotFoundException("Asset not found"),
-      );
+    it("should return 404 with ASSET_NOT_FOUND", async () => {
+      mockCheckExistence.mockRejectedValue(assetErrors.notFound());
 
       const res = await testApp.request(`/assets/${VALID_UUID}`, {
-        method: "DELETE",
-        headers: { Authorization: MOCK_JWT },
+        method: "DELETE", headers: { Authorization: MOCK_JWT },
       });
 
       expect(res.status).toBe(404);
+      expect((await res.json()).error.code).toBe("ASSET_NOT_FOUND");
     });
   });
 });

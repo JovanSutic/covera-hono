@@ -1,18 +1,17 @@
-import { OpenAPIHono } from "@hono/zod-openapi";
+import { createModuleApp } from "@/core/utils/module-app";
 import {
   getAssetsByApartmentRoute,
   createAssetRoute,
   deleteAssetRoute,
 } from "./assets.contract";
 import { assetsService } from "./assets.service";
-import { NotFoundException } from "@/core/errors/error.exceptions";
+import { assetErrors } from "./assets.errors";
 import {
   assertCanModifyAsset,
   checkExistence,
 } from "@/core/utils/db-validator";
-import { App } from "@/types";
 
-const app = new OpenAPIHono<App>();
+const app = createModuleApp();
 
 app.openapi(getAssetsByApartmentRoute, async (c) => {
   const db = c.get("db");
@@ -47,11 +46,7 @@ app.openapi(deleteAssetRoute, async (c) => {
   const result = await assetsService.delete(db, id);
 
   if (!result) {
-    throw new NotFoundException({
-      code: "ASSET_NOT_FOUND",
-      message: "Asset does not exist.",
-      meta: { origin: "ROUTE", id },
-    });
+    throw assetErrors.notFound({ id });
   }
 
   return c.json(result, 200);

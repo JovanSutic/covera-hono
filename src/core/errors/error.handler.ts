@@ -1,5 +1,6 @@
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { z } from "@hono/zod-openapi";
+import { z, type OpenAPIHonoOptions } from "@hono/zod-openapi";
+import type { App } from "@/types";
 import { HTTPException } from "hono/http-exception";
 import { AppError } from "./error.exceptions";
 import { ERROR_REGISTRY, type ErrorCode } from "./error.codes";
@@ -117,6 +118,25 @@ export const formatValidationError = (result: {
       meta: { origin: "VALIDATION", target: result.target },
     }),
   };
+};
+
+/**
+ * The one contract-validation hook. Every `OpenAPIHono` instance must be constructed with this
+ * as its `defaultHook` — `zValidator` falls back to `c.json(result, 400)` when the hook is
+ * missing, which leaks raw Zod text to the client.
+ *
+ * NOTE: `defaultHook` is inherited by `basePath()` and passed along by `.route()`, but it is
+ * read off `this.defaultHook` at the time `app.openapi()` is called. A sub-app created without
+ * it therefore validates with NO hook, regardless of the parent's configuration. Hence
+ * `createModuleApp()` — see `@/core/utils/module-app`.
+ */
+export const validationHook: NonNullable<
+  OpenAPIHonoOptions<App>["defaultHook"]
+> = (result, c) => {
+  if (!result.success) {
+    const { status, body } = formatValidationError(result);
+    return c.json(body, status);
+  }
 };
 
 // ---------------------------------------------------------------------------
