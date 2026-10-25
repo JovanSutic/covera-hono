@@ -287,6 +287,11 @@ interface FlagCreationParams {
   maxHoursWindow?: number; // Defaults to 12 hours if not specified
 }
 
+/**
+ * Asserts a flag may be created for an inspection shot.
+ * Order: existence → uniqueness → time window.
+ * The first violation wins, so identical input always yields the same error.
+ */
 export async function assertCanCreateFlag(
   db: any,
   params: FlagCreationParams,
@@ -313,13 +318,19 @@ export async function assertCanCreateFlag(
     .limit(1);
 
   if (!record) {
-    throw new NotFoundException(`Inspection with ID ${inspectionId}`);
+    throw new NotFoundException({
+      code: "INSPECTION_NOT_FOUND",
+      message: "Inspection does not exist.",
+      meta: { origin: "DOMAIN", id: inspectionId },
+    });
   }
 
   if (record.existingFlagId) {
-    throw new ConflictException(
-      `A flag has already been submitted for shot ${shotId} under inspection ${inspectionId}.`,
-    );
+    throw new ConflictException({
+      code: "FLAG_ALREADY_EXISTS",
+      message: "A flag has already been submitted for this shot.",
+      meta: { origin: "DOMAIN", shotId },
+    });
   }
 
   const effectiveCheckIn =
@@ -333,9 +344,11 @@ export async function assertCanCreateFlag(
   const now = new Date();
 
   if (now > deadline) {
-    throw new BadRequestException(
-      `Cannot submit flag: time window expired. Flags can only be created up to ${maxHoursWindow} hours after check-in (${effectiveCheckIn.toISOString()}).`,
-    );
+    throw new BadRequestException({
+      code: "FLAG_WINDOW_EXPIRED",
+      message: `The flag submission window has closed. Flags can only be submitted up to ${maxHoursWindow} hours after check-in.`,
+      meta: { origin: "DOMAIN", deadline: deadline.toISOString() },
+    });
   }
 }
 
