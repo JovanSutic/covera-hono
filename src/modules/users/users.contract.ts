@@ -30,8 +30,8 @@ export const getUsersRoute = createRoute({
           schema: GetUsersResponseSchema,
         },
       },
-      ...userErrors,
     },
+    ...userErrors,
   },
 });
 
