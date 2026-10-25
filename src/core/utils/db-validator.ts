@@ -1,21 +1,29 @@
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import {
+  AppError,
   NotFoundException,
   ForbiddenException,
   ConflictException,
   BadRequestException,
 } from "@/core/errors/error.exceptions";
+import type { ErrorCode } from "@/core/errors/error.codes";
 import { inspections, reservations, users, locations, apartments, inspectionFlags, assets, apartmentShotAssets, apartmentShots, assetTypes } from "@/db";
 
-const schemaRegistry = {
-  users: users,
-  locations: locations,
-  apartments: apartments,
-  reservations: reservations,
-  inspections: inspections,
-  assets: assets,
-  assetTypes: assetTypes
-} as const;
+/**
+ * Maps a registry resource key to its table and its NOT_FOUND code.
+ * Adding a resource here is what makes `checkExistence(db, "<key>", id)` type-check.
+ */
+const resourceRegistry = {
+  users:        { table: users,        code: "USER_NOT_FOUND",        label: "User" },
+  locations:    { table: locations,    code: "LOCATION_NOT_FOUND",    label: "Location" },
+  apartments:   { table: apartments,   code: "APARTMENT_NOT_FOUND",   label: "Apartment" },
+  reservations: { table: reservations, code: "RESERVATION_NOT_FOUND", label: "Reservation" },
+  inspections:  { table: inspections,  code: "INSPECTION_NOT_FOUND",  label: "Inspection" },
+  assets:       { table: assets,       code: "ASSET_NOT_FOUND",       label: "Asset" },
+  assetTypes:   { table: assetTypes,   code: "ASSET_TYPE_NOT_FOUND",  label: "Asset type" },
+} as const satisfies Record<string, { table: unknown; code: ErrorCode; label: string }>;
+
+type ResourceType = keyof typeof resourceRegistry;
 
 interface OwnershipContext {
   userId: string;
@@ -23,29 +31,38 @@ interface OwnershipContext {
   allowAdmin?: boolean;
 }
 
-type ResourceType = keyof typeof schemaRegistry;
-
+/**
+ * Asserts that a row exists.
+ * Order: existence only.
+ */
 export async function checkExistence(
   db: any,
   resource: ResourceType,
   id: string,
 ): Promise<void> {
-  const table = schemaRegistry[resource];
+  const entry = resourceRegistry[resource];
 
-  if (!table) {
-    throw new Error(
-      `Developer Error: Resource '${resource}' is not registered in checkExistence schemaRegistry.`,
-    );
+  // Unreachable via the type system; a real assertion failure, not a client error.
+  if (!entry) {
+    throw new AppError(500, {
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Something went wrong on our end.",
+      meta: { origin: "DEVELOPER", reason: `Unregistered resource '${resource}'` },
+    });
   }
 
-  const result = await db
-    .select({ id: (table as any).id })
-    .from(table)
-    .where(eq((table as any).id, id))
+  const [row] = await db
+    .select({ id: (entry.table as any).id })
+    .from(entry.table)
+    .where(eq((entry.table as any).id, id))
     .limit(1);
 
-  if (result.length === 0) {
-    throw new NotFoundException(`${resource.slice(0, -1)} with ID ${id}`);
+  if (!row) {
+    throw new NotFoundException({
+      code: entry.code,
+      message: `${entry.label} does not exist.`,
+      meta: { origin: "DOMAIN", resource, id },
+    });
   }
 }
 
