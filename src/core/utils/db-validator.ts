@@ -201,6 +201,11 @@ export async function assertNoOverlappingReservation(
   }
 }
 
+/**
+ * Asserts an inspection may be created for a reservation.
+ * Order: existence → uniqueness → state → photo proof → time window.
+ * The first violation wins, so identical input always yields the same error.
+ */
 export async function assertCanCreateInspection(
   db: any,
   reservationId: string,
@@ -221,28 +226,39 @@ export async function assertCanCreateInspection(
 
   // 1. Existence check
   if (!record) {
-    throw new NotFoundException(`Reservation with ID ${reservationId}`);
+    throw new NotFoundException({
+      code: "RESERVATION_NOT_FOUND",
+      message: "Reservation does not exist.",
+      meta: { origin: "DOMAIN", id: reservationId },
+    });
   }
 
   // 2. Prevent duplicate inspection
   if (record.existingInspectionId) {
-    throw new ConflictException(
-      `An inspection already exists for reservation ${reservationId}.`,
-    );
+    throw new ConflictException({
+      code: "INSPECTION_ALREADY_EXISTS",
+      message: "An inspection already exists for this reservation.",
+      meta: { origin: "DOMAIN", inspectionId: record.existingInspectionId },
+    });
   }
 
   // 3. Status precondition check
   if (record.status !== "COVERED") {
-    throw new BadRequestException(
-      `Cannot create inspection: reservation status must be 'COVERED' (current: '${record.status}').`,
-    );
+    throw new BadRequestException({
+      code: "RESERVATION_NOT_COVERED",
+      message: `An inspection can only be created once the reservation is covered. This reservation is currently '${record.status}'.`,
+      meta: { origin: "DOMAIN", status: record.status },
+    });
   }
 
   // 4. Photo proof requirement check
   if (!record.hasPhotoProof) {
-    throw new BadRequestException(
-      "Cannot create inspection: reservation does not have photo proof satisfied.",
-    );
+    throw new BadRequestException({
+      code: "INSPECTION_NO_PHOTO_PROOF",
+      message:
+        "An inspection can only be created once the reservation's photo proof is satisfied.",
+      meta: { origin: "DOMAIN", id: reservationId },
+    });
   }
 
   // 5. Time window check (Up to 1 hour past effective check-in time)
@@ -257,9 +273,11 @@ export async function assertCanCreateInspection(
   const now = new Date();
 
   if (now > deadline) {
-    throw new BadRequestException(
-      `Cannot create inspection: window expired. Inspections can only be created up to 1 hour after check-in (${effectiveCheckIn.toISOString()}).`,
-    );
+    throw new BadRequestException({
+      code: "INSPECTION_WINDOW_EXPIRED",
+      message: `The inspection window has closed. Inspections can only be created up to 1 hour after check-in (${effectiveCheckIn.toISOString()}).`,
+      meta: { origin: "DOMAIN", deadline: deadline.toISOString() },
+    });
   }
 }
 
