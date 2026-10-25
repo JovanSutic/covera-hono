@@ -5,6 +5,7 @@ import { users } from "@/db/schema";
 import { Variables } from "@/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "@hono/zod-openapi";
+import { BadRequestException } from "@/core/errors/error.exceptions";
 import { CreateUserSchema, UserFilters } from "./users.schema";
 
 type CreateUserInput = z.infer<typeof CreateUserSchema>;
@@ -69,7 +70,11 @@ export const usersService = {
     });
 
     if (error || !data.user) {
-      throw new Error(error?.message ?? "Failed to create auth user");
+      throw new BadRequestException({
+        code: "AUTH_PROVIDER_ERROR",
+        message: "The account could not be created with the authentication provider. Please try again.",
+        meta: { origin: "UPSTREAM", provider: "supabase", driver: error?.message },
+      });
     }
 
     try {
@@ -109,9 +114,11 @@ export const usersService = {
     );
 
     if (error || !data.user) {
-      throw new Error(
-        error?.message ?? "Failed to dispatch automated invitation email",
-      );
+      throw new BadRequestException({
+        code: "INVITATION_ERROR",
+        message: "The invitation email could not be sent. Please check the email address and try again.",
+        meta: { origin: "UPSTREAM", provider: "supabase", driver: error?.message },
+      });
     }
 
     await db.update(users).set({ status: "invited" }).where(eq(users.id, id));

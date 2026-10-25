@@ -9,8 +9,8 @@ import {
 } from "@/db";
 import { Variables, Bindings } from "@/types";
 import {
+  AppError,
   BadRequestException,
-  NotFoundException,
 } from "@/core/errors/error.exceptions";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -61,7 +61,11 @@ export const apartmentsService = {
     const result = await this.getById(db, createdApartment.id);
 
     if (!result) {
-      throw new NotFoundException("Failed to retrieve created apartment");
+      throw new AppError(500, {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Something went wrong on our end. Please try again.",
+        meta: { origin: "DEVELOPER", reason: "Apartment vanished between insert and read", id: createdApartment.id },
+      });
     }
 
     return result;
@@ -87,10 +91,13 @@ export const apartmentsService = {
     const activeCount = existingCount?.val || 0;
 
     if (activeCount + fileTypes.length > MAX_PHOTOS_PER_APARTMENT) {
-      throw new BadRequestException(
-        `Upload limit exceeded. Maximum allowed: ${MAX_PHOTOS_PER_APARTMENT}. Currently active: ${activeCount}.`,
-        "MAX_PHOTOS_EXCEEDED",
-      );
+      throw new BadRequestException({
+        code: "MAX_PHOTOS_EXCEEDED",
+        message:
+          `This apartment already has ${activeCount} photos and the limit is ${MAX_PHOTOS_PER_APARTMENT}. ` +
+          "Remove some photos before adding more.",
+        meta: { origin: "DOMAIN", limit: MAX_PHOTOS_PER_APARTMENT, activeCount },
+      });
     }
 
     return Promise.all(
@@ -120,10 +127,13 @@ export const apartmentsService = {
     const { reservationId, type, photos } = payload;
 
     if (photos.length > MAX_PHOTOS_PER_APARTMENT) {
-      throw new BadRequestException(
-        `Sync rejected. Total confirmed photos (${photos.length}) exceeds maximum limit of ${MAX_PHOTOS_PER_APARTMENT}.`,
-        "MAX_PHOTOS_EXCEEDED",
-      );
+      throw new BadRequestException({
+        code: "MAX_PHOTOS_EXCEEDED",
+        message:
+          `You are confirming ${photos.length} photos but the limit is ${MAX_PHOTOS_PER_APARTMENT}. ` +
+          "Remove some photos and try again.",
+        meta: { origin: "DOMAIN", limit: MAX_PHOTOS_PER_APARTMENT, submitted: photos.length },
+      });
     }
 
     const targetShotIds = Array.from(new Set(photos.map((p) => p.shotId)));
