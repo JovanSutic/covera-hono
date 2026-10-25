@@ -397,9 +397,14 @@ export async function assertCanModifyAsset(
     .limit(1);
 
   if (lockedRecord) {
-    throw new ConflictException(
-      `Cannot ${action} asset '${assetId}': it is linked to a shot with locked photo proof for an upcoming or active reservation (Reservation Status: ${lockedRecord.status}).`,
-    );
+    throw new ConflictException({
+      code: "ASSET_LOCKED",
+      message:
+        `This asset cannot be ${action === "delete" ? "deleted" : "changed"} because it is part of ` +
+        "a shot for a reservation that is currently covered. Wait until that reservation is closed, " +
+        "or remove the asset from the shot first.",
+      meta: { origin: "DOMAIN", assetId, reservationId: lockedRecord.reservationId, status: lockedRecord.status },
+    });
   }
 }
 
@@ -433,8 +438,12 @@ export async function assertCanModifyApartmentShots(
     .limit(1);
 
   if (lockedRecord) {
-    throw new ConflictException(
-      `Cannot sync or modify shots for apartment '${apartmentId}': there is an upcoming reservation with locked photo proof (Reservation Status: ${lockedRecord.status}).`,
-    );
+    throw new ConflictException({
+      code: "APARTMENT_SHOTS_LOCKED",
+      message:
+        "These shots cannot be changed because this apartment has an upcoming or active reservation " +
+        "with locked photo proof. Wait until that reservation is closed.",
+      meta: { origin: "DOMAIN", apartmentId, status: lockedRecord.status },
+    });
   }
 }
