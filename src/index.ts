@@ -11,57 +11,31 @@ import { dbMiddleware } from "./middleware/db";
 import { App } from "./types";
 import { supabaseMiddleware } from "./middleware/supabase";
 import { s3Middleware } from "./middleware/s3";
-import { CustomException } from "./core/errors/error.exceptions";
+import { formatValidationError, renderError, toErrorResponse } from "./core/errors/error.handler";
 import { cors } from "hono/cors";
 
 const app = new OpenAPIHono<App>({
   defaultHook: (result, c) => {
     if (!result.success) {
-      const formattedDetails = result.error.issues.map((issue) => ({
-        field: issue.path.join("."),
-        message: issue.message,
-      }));
-
-      return c.json(
-        {
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "The request parameters failed validation tests.",
-            details: formattedDetails,
-          },
-        },
-        400,
-      );
+      const { status, body } = formatValidationError(result as any);
+      return c.json(body, status);
     }
   },
 });
 
 app.onError((err, c) => {
-  if (err instanceof CustomException) {
-    return c.json(
-      {
-        success: false,
-        error: {
-          code: err.code,
-          message: err.message,
-        },
-      },
-      err.status,
-    );
-  }
+  const { status, body } = toErrorResponse(err);
+  if (status >= 500) console.error("[Unhandled Error]", err);
+  return c.json(body, status);
+});
 
-  console.error(`[Unhandled Error]: ${err.message}`, err.stack);
-  return c.json(
-    {
-      success: false,
-      error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Something went wrong on our end.",
-      },
-    },
-    500,
-  );
+app.notFound((c) => {
+  const body = renderError({
+    code: "ROUTE_NOT_FOUND",
+    message: `Route ${c.req.method} ${c.req.path} does not exist.`,
+    status: 404,
+  });
+  return c.json(body, 404);
 });
 
 app.use(
