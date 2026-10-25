@@ -118,14 +118,6 @@ const testApp = createTestApp({
   }),
 });
 
-// Map domain ConflictException to 409 status code in test app environment
-testApp.onError((err, c) => {
-  if (err instanceof ConflictException) {
-    return c.json({ message: err.message }, 409);
-  }
-  return c.json({ message: err.message || "Internal Error" }, 500);
-});
-
 testApp.route("/apartment-shots", apartmentShotsApp);
 
 const setupSuccessfulGuards = (

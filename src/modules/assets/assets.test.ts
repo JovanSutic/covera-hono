@@ -7,7 +7,6 @@ import {
   ConflictException,
   NotFoundException,
 } from "@/core/errors/error.exceptions";
-import { HTTPException } from "hono/http-exception";
 
 const {
   mockGetByApartmentId,
@@ -83,20 +82,6 @@ const testApp = createTestApp({
     updateUserById: mockUpdateUserById,
     authUser: currentTestUser,
   }),
-});
-
-// Map domain exceptions to appropriate status codes in test app environment
-testApp.onError((err, c) => {
-  if (err instanceof ConflictException) {
-    return c.json({ message: err.message }, 409);
-  }
-  if (err instanceof NotFoundException) {
-    return c.json({ message: err.message }, 404);
-  }
-  if (err instanceof HTTPException) {
-    return err.getResponse();
-  }
-  return c.json({ message: err.message || "Internal Error" }, 500);
 });
 
 testApp.route("/assets", assetsApp);
