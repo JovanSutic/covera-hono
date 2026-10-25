@@ -47,7 +47,11 @@ app.openapi(deleteAssetRoute, async (c) => {
   const result = await assetsService.delete(db, id);
 
   if (!result) {
-    throw new NotFoundException("Asset");
+    throw new NotFoundException({
+      code: "ASSET_NOT_FOUND",
+      message: "Asset does not exist.",
+      meta: { origin: "ROUTE", id },
+    });
   }
 
   return c.json(result, 200);

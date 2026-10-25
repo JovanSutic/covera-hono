@@ -29,7 +29,11 @@ app.openapi(getApartmentByIdRoute, async (c) => {
   const apartment = await apartmentsService.getById(db, id);
 
   if (!apartment) {
-    throw new NotFoundException("Apartment");
+    throw new NotFoundException({
+      code: "APARTMENT_NOT_FOUND",
+      message: "Apartment does not exist.",
+      meta: { origin: "ROUTE", id },
+    });
   }
 
   return c.json(apartment, 200);
@@ -90,7 +94,11 @@ app.openapi(getApartmentsByHostRoute, async (c) => {
 
   const user = await usersService.getByAuthId(db, authUser.id);
   if (!user) {
-    throw new NotFoundException("User");
+    throw new NotFoundException({
+      code: "USER_NOT_FOUND",
+      message: "User does not exist.",
+      meta: { origin: "ROUTE", authId: authUser.id },
+    });
   }
 
   const userApartments = await apartmentsService.getByOwnerId(db, user.id);

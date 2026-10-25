@@ -33,7 +33,11 @@ app.openapi(getUserByIdRoute, async (c) => {
   const user = await usersService.getById(db, id);
 
   if (!user) {
-    throw new NotFoundException("User");
+    throw new NotFoundException({
+      code: "USER_NOT_FOUND",
+      message: "User does not exist.",
+      meta: { origin: "ROUTE", id },
+    });
   }
 
   return c.json(user, 200);
@@ -58,7 +62,11 @@ app.openapi(inviteUserRoute, async (c) => {
     const inviteResult = await usersService.invite(db, supabase, id);
 
     if (!inviteResult) {
-      throw new NotFoundException("User");
+      throw new NotFoundException({
+        code: "USER_NOT_FOUND",
+        message: "User does not exist.",
+        meta: { origin: "ROUTE", id },
+      });
     }
 
     return c.json(
@@ -71,10 +79,10 @@ app.openapi(inviteUserRoute, async (c) => {
   } catch (error: any) {
     if (error instanceof NotFoundException) throw error;
 
-    throw new BadRequestException(
-      error.message || "Invitation execution error",
-      "INVITATION_ERROR",
-    );
+    throw new BadRequestException({
+      code: "INVITATION_ERROR",
+      message: error.message || "Invitation execution error",
+    });
   }
 });
 
@@ -85,7 +93,10 @@ app.openapi(updatePasswordRoute, async (c) => {
   const { password } = c.req.valid("json");
 
   if (!authUser.id) {
-    throw new UnauthorizedException();
+    throw new UnauthorizedException({
+      code: "AUTH_TOKEN_MISSING",
+      message: "Authentication is required.",
+    });
   }
 
   const { error: authError } = await supabase.auth.admin.updateUserById(
@@ -94,7 +105,10 @@ app.openapi(updatePasswordRoute, async (c) => {
   );
 
   if (authError) {
-    throw new BadRequestException(authError.message, "AUTH_PROVIDER_ERROR");
+    throw new BadRequestException({
+      code: "AUTH_PROVIDER_ERROR",
+      message: authError.message,
+    });
   }
 
   await usersService.updateStatusByAuthId(db, authUser.id, "confirmed");

@@ -22,7 +22,10 @@ app.openapi(createInspectionRoute, async (c) => {
   const user = c.get("user");
 
   if (!user) {
-    throw new UnauthorizedException("Inspection");
+    throw new UnauthorizedException({
+      code: "AUTH_TOKEN_MISSING",
+      message: "Authentication is required.",
+    });
   }
 
   await assertCanCreateInspection(db, body.reservationId);
@@ -83,7 +86,11 @@ app.openapi(getInspectionByReservationRoute, async (c) => {
   );
 
   if (!inspection) {
-    throw new NotFoundException("Inspection");
+    throw new NotFoundException({
+      code: "INSPECTION_NOT_FOUND",
+      message: "Inspection does not exist.",
+      meta: { origin: "ROUTE", reservationId },
+    });
   }
 
   return c.json(inspection, 200);
@@ -97,7 +104,11 @@ app.openapi(pingInspectionRoute, async (c) => {
   const tracked = await inspectionsService.recordVisit(db, id, userAgent);
 
   if (!tracked) {
-    throw new NotFoundException("Inspection");
+    throw new NotFoundException({
+      code: "INSPECTION_NOT_FOUND",
+      message: "Inspection does not exist.",
+      meta: { origin: "ROUTE", id },
+    });
   }
 
   return c.json({ success: true, tracked: true }, 200);

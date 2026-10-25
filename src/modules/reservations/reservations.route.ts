@@ -41,7 +41,10 @@ app.openapi(createReservationRoute, async (c) => {
   const user = c.get("user");
 
   if (!user) {
-    throw new UnauthorizedException("Reservation");
+    throw new UnauthorizedException({
+      code: "AUTH_TOKEN_MISSING",
+      message: "Authentication is required.",
+    });
   }
 
   await assertApartmentOwnership(db, body.apartmentId, {
@@ -71,7 +74,11 @@ app.openapi(updateReservationRoute, async (c) => {
   const updatedReservation = await reservationsService.update(db, id, body);
 
   if (!updatedReservation) {
-    throw new NotFoundException("Reservation");
+    throw new NotFoundException({
+      code: "RESERVATION_NOT_FOUND",
+      message: "Reservation does not exist.",
+      meta: { origin: "ROUTE", id },
+    });
   }
 
   return c.json(updatedReservation, 200);
@@ -84,7 +91,11 @@ app.openapi(deleteReservationRoute, async (c) => {
   const result = await reservationsService.delete(db, id);
 
   if (!result) {
-    throw new NotFoundException("Reservation");
+    throw new NotFoundException({
+      code: "RESERVATION_NOT_FOUND",
+      message: "Reservation does not exist.",
+      meta: { origin: "ROUTE", id },
+    });
   }
 
   return c.json(result, 200);

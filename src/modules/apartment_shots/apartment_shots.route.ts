@@ -25,7 +25,11 @@ app.openapi(getShotsByApartmentRoute, async (c) => {
     const reservation = await reservationsService.getById(db, reservationId);
 
     if (!reservation) {
-      throw new NotFoundException(`Reservation with ID ${reservationId}`);
+      throw new NotFoundException({
+        code: "RESERVATION_NOT_FOUND",
+        message: "Reservation does not exist.",
+        meta: { origin: "ROUTE", id: reservationId },
+      });
     }
 
     cutoffDate = new Date(reservation.createdAt);
