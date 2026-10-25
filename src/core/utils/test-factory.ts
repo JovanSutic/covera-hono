@@ -1,10 +1,6 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { App } from "@/types";
-import { 
-  NotFoundException, 
-  UnauthorizedException, 
-  BadRequestException 
-} from "@/core/errors/error.exceptions";
+import { formatValidationError, renderError, toErrorResponse } from "@/core/errors/error.handler";
 import { vi } from "vitest";
 
 vi.mock("@/modules/users/users.service", () => ({
@@ -26,29 +22,30 @@ export function createTestApp(config: TestAppConfig = {}) {
   const app = new OpenAPIHono<App>({
     defaultHook: (result, c) => {
       if (!result.success) {
-        return c.json({ message: "Validation Error" }, 400);
+        const { status, body } = formatValidationError(result as any);
+        return c.json(body, status);
       }
     },
   });
 
   app.onError((err, c) => {
-    if (err instanceof NotFoundException) {
-      return c.json({ message: err.message || "Resource not found" }, 404);
-    }
-    if (err instanceof UnauthorizedException) {
-      return c.json({ message: "Unauthorized" }, 401);
-    }
-    if (err instanceof BadRequestException) {
-      return c.json({ message: err.message }, 400);
-    }
+    const { status, body } = toErrorResponse(err);
+    if (status >= 500) console.error("[Test Unhandled Error]", err);
+    return c.json(body, status);
+  });
 
-    console.error("Unhandled test server crash trace:", err);
-    return c.json({ message: "Internal Server Error" }, 500);
+  app.notFound((c) => {
+    const body = renderError({
+      code: "ROUTE_NOT_FOUND",
+      message: `Route ${c.req.method} ${c.req.path} does not exist.`,
+      status: 404,
+    });
+    return c.json(body, 404);
   });
 
   app.use("*", async (c, next) => {
     c.set("db", {} as any);
-    
+
     const activeOverrides = config.contextOverrides ? config.contextOverrides(c) : {};
 
     Object.keys(activeOverrides).forEach((key) => {
