@@ -84,13 +84,19 @@ export async function assertApartmentOwnership(
     .limit(1);
 
   if (!apartment) {
-    throw new NotFoundException(`Apartment with ID ${apartmentId} not found`);
+    throw new NotFoundException({
+      code: "APARTMENT_NOT_FOUND",
+      message: "Apartment does not exist.",
+      meta: { origin: "DOMAIN", apartmentId },
+    });
   }
 
   if (apartment.owner !== userId) {
-    throw new ForbiddenException(
-      "You do not have permission to modify or create resources for this apartment",
-    );
+    throw new ForbiddenException({
+      code: "FORBIDDEN_APARTMENT_ACCESS",
+      message: "You do not have access to this apartment.",
+      meta: { origin: "DOMAIN", apartmentId },
+    });
   }
 }
 
@@ -110,6 +116,10 @@ const isRealDate = (dateStr?: string | Date | null): boolean => {
   return !isNaN(time) && time > 0;
 };
 
+/**
+ * Asserts the requested range does not overlap an existing reservation.
+ * Order: range validity → overlap. The first violation wins.
+ */
 export async function assertNoOverlappingReservation(
   db: any,
   params: OverlapCheckParams,
@@ -133,9 +143,17 @@ export async function assertNoOverlappingReservation(
     : new Date(checkOutDatetime);
 
   if (newStart >= newEnd) {
-    throw new ConflictException(
-      "Check-out date must be strictly after check-in date.",
-    );
+    throw new BadRequestException({
+      code: "RESERVATION_INVALID_RANGE",
+      message: "Check-out must be strictly after check-in.",
+      details: [
+        {
+          field: "body.checkOutDatetime",
+          message: "Check-out must be strictly after check-in.",
+        },
+      ],
+      meta: { origin: "DOMAIN" },
+    });
   }
 
   const isoStart = newStart.toISOString();
@@ -173,9 +191,13 @@ export async function assertNoOverlappingReservation(
     .limit(1);
 
   if (overlapping) {
-    throw new ConflictException(
-      "The apartment is already booked for the selected date range.",
-    );
+    throw new ConflictException({
+      code: "RESERVATION_OVERLAP",
+      message:
+        "This apartment already has a reservation overlapping the requested dates. " +
+        "Choose dates outside that range or cancel the existing reservation.",
+      meta: { origin: "DOMAIN", apartmentId, conflictingReservationId: overlapping.id },
+    });
   }
 }
 
