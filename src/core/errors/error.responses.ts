@@ -21,10 +21,10 @@ export const APARTMENT_SCOPED = [
 export const VALIDATION = ["VALIDATION_ERROR"] as const satisfies readonly ErrorCode[];
 
 /** Builds `{ 400: {...}, 401: {...}, ... }` for a route from the codes it can return. */
-export const errorResponses = (
-  codes: readonly ErrorCode[],
+export const errorResponses = <const C extends readonly ErrorCode[]>(
+  codes: C,
   schema: z.ZodType<unknown> = StandardErrorSchema,
-) => responsesForCodes([...codes], schema);
+) => responsesForCodes(codes, schema);
 
 /** Convenience for the most common shape: auth + validation + 500. */
 export const baseResponses = errorResponses([...AUTHED, ...VALIDATION]);

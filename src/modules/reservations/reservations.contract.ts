@@ -10,11 +10,40 @@ import {
   UpdateReservationSchema,
 } from "./reservations.schema";
 import { authGuard } from "@/middleware/authGuard";
-import { commonErrors } from "@/core/errors/error.helpers";
+import { errorResponses, AUTHED, ROLE, APARTMENT_SCOPED, VALIDATION } from "@/core/errors/error.responses";
 import { rolesGuard } from "@/middleware/roleGuard";
 import { apartmentGuard } from "@/middleware/apartmentGuard";
 
-const reservationErrors = commonErrors.getStandardResponses("Reservation");
+const getReservationsByApartmentErrors = errorResponses([
+  ...AUTHED,
+  ...ROLE,
+  ...APARTMENT_SCOPED,
+  ...VALIDATION,
+]);
+const createReservationErrors = errorResponses([
+  ...AUTHED,
+  ...ROLE,
+  ...VALIDATION,
+  "APARTMENT_NOT_FOUND",
+  "FORBIDDEN_APARTMENT_ACCESS",
+  "RESERVATION_OVERLAP",
+  "RESERVATION_INVALID_RANGE",
+  "RELATED_RECORD_INVALID",
+]);
+const updateReservationErrors = errorResponses([
+  ...AUTHED,
+  ...ROLE,
+  ...VALIDATION,
+  "RESERVATION_NOT_FOUND",
+  "RESERVATION_OVERLAP",
+  "RESERVATION_INVALID_RANGE",
+]);
+const deleteReservationErrors = errorResponses([
+  ...AUTHED,
+  ...ROLE,
+  ...VALIDATION,
+  "RESERVATION_NOT_FOUND",
+]);
 
 export const getReservationsByApartmentRoute = createRoute({
   method: "get",
@@ -38,7 +67,7 @@ export const getReservationsByApartmentRoute = createRoute({
         },
       },
     },
-    ...reservationErrors,
+    ...getReservationsByApartmentErrors,
   },
 });
 
@@ -65,7 +94,7 @@ export const createReservationRoute = createRoute({
         },
       },
     },
-    ...reservationErrors,
+    ...createReservationErrors,
   },
 });
 
@@ -93,7 +122,7 @@ export const updateReservationRoute = createRoute({
         },
       },
     },
-    ...reservationErrors,
+    ...updateReservationErrors,
   },
 });
 
@@ -114,6 +143,6 @@ export const deleteReservationRoute = createRoute({
         },
       },
     },
-    ...reservationErrors,
+    ...deleteReservationErrors,
   },
 });

@@ -6,6 +6,10 @@ import {
 } from "./locations.schema";
 import { authGuard } from "@/middleware/authGuard";
 import { rolesGuard } from "@/middleware/roleGuard";
+import { errorResponses, AUTHED, ROLE, VALIDATION } from "@/core/errors/error.responses";
+
+const getLocationsErrors = errorResponses([...AUTHED, ...ROLE]);
+const createLocationErrors = errorResponses([...AUTHED, ...ROLE, ...VALIDATION]);
 
 export const getLocationsRoute = createRoute({
   method: "get",
@@ -21,6 +25,7 @@ export const getLocationsRoute = createRoute({
         },
       },
     },
+    ...getLocationsErrors,
   },
 });
 
@@ -48,5 +53,6 @@ export const createLocationRoute = createRoute({
         },
       },
     },
+    ...createLocationErrors,
   },
 });

@@ -1,6 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { ERROR_REGISTRY, type ErrorCode } from "./error.codes";
+import { ERROR_REGISTRY, type ErrorCode, type StatusFor } from "./error.codes";
 import { AppError, exceptionForStatus } from "./error.exceptions";
 
 /**
@@ -82,10 +82,24 @@ export function defineErrors<const T extends Record<string, ErrorSpec<any>>>(
 }
 
 /**
+ * The response map for a set of codes, keeping each status as a literal key.
+ *
+ * The literal keys matter: `createRoute` derives the handler's permitted status codes from
+ * `keyof R["responses"]`. A `Record<number, …>` index signature erases them, so a handler
+ * that returns (say) a 404 would fail to typecheck against a contract that declares it.
+ */
+export type ErrorResponsesFor<C extends readonly ErrorCode[]> = {
+  [S in StatusFor<C[number]>]: ReturnType<typeof createErrorResponse>;
+};
+
+/**
  * Groups codes by status and builds one response entry per status.
  * Shared by `defineErrors` and the contract bundles in `error.responses.ts`.
  */
-export function responsesForCodes(codes: ErrorCode[], schema: z.ZodType<unknown>) {
+export function responsesForCodes<const C extends readonly ErrorCode[]>(
+  codes: C,
+  schema: z.ZodType<unknown>,
+): ErrorResponsesFor<C> {
   const byStatus = new Map<ContentfulStatusCode, ErrorCode[]>();
   for (const code of codes) {
     const status = ERROR_REGISTRY[code].status;
@@ -93,5 +107,5 @@ export function responsesForCodes(codes: ErrorCode[], schema: z.ZodType<unknown>
   }
   return Object.fromEntries(
     [...byStatus.entries()].map(([status, list]) => [status, createErrorResponse(list, schema)]),
-  ) as Record<number, ReturnType<typeof createErrorResponse>>;
+  ) as ErrorResponsesFor<C>;
 }

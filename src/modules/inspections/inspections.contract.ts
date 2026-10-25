@@ -10,10 +10,43 @@ import {
 } from "./inspections.schema";
 import { authGuard } from "@/middleware/authGuard";
 import { rolesGuard } from "@/middleware/roleGuard";
-import { commonErrors } from "@/core/errors/error.helpers";
+import { errorResponses, AUTHED, ROLE, VALIDATION } from "@/core/errors/error.responses";
 import { CreateInspectionFlagSchema, InspectionFlagSchema } from "./inspectionFlags.schema";
 
-const inspectionErrors = commonErrors.getStandardResponses("Inspection");
+const createInspectionErrors = errorResponses([
+  ...AUTHED,
+  ...ROLE,
+  ...VALIDATION,
+  "RESERVATION_NOT_FOUND",
+  "INSPECTION_ALREADY_EXISTS",
+  "RESERVATION_NOT_COVERED",
+  "INSPECTION_NO_PHOTO_PROOF",
+  "INSPECTION_WINDOW_EXPIRED",
+]);
+const createInspectionFlagErrors = errorResponses([
+  ...VALIDATION,
+  "INSPECTION_NOT_FOUND",
+  "FLAG_ALREADY_EXISTS",
+  "FLAG_WINDOW_EXPIRED",
+  "INTERNAL_SERVER_ERROR",
+]);
+const getInspectionByIdErrors = errorResponses([
+  ...VALIDATION,
+  "INSPECTION_NOT_FOUND",
+  "INTERNAL_SERVER_ERROR",
+]);
+const getInspectionByReservationErrors = errorResponses([
+  ...AUTHED,
+  ...ROLE,
+  ...VALIDATION,
+  "RESERVATION_NOT_FOUND",
+  "INSPECTION_NOT_FOUND",
+]);
+const pingInspectionErrors = errorResponses([
+  ...VALIDATION,
+  "INSPECTION_NOT_FOUND",
+  "INTERNAL_SERVER_ERROR",
+]);
 
 /**
  * Host creates an inspection for a given reservation
@@ -41,7 +74,7 @@ export const createInspectionRoute = createRoute({
         },
       },
     },
-    ...inspectionErrors,
+    ...createInspectionErrors,
   },
 });
 
@@ -71,7 +104,7 @@ export const createInspectionFlagRoute = createRoute({
         },
       },
     },
-    ...inspectionErrors,
+    ...createInspectionFlagErrors,
   },
 });
 
@@ -96,7 +129,7 @@ export const getInspectionByIdRoute = createRoute({
         },
       },
     },
-    ...inspectionErrors,
+    ...getInspectionByIdErrors,
   },
 });
 
@@ -120,7 +153,7 @@ export const getInspectionByReservationRoute = createRoute({
         },
       },
     },
-    ...inspectionErrors,
+    ...getInspectionByReservationErrors,
   },
 });
 
@@ -144,6 +177,6 @@ export const pingInspectionRoute = createRoute({
         },
       },
     },
-    ...inspectionErrors,
+    ...pingInspectionErrors,
   },
 });

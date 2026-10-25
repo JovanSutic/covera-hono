@@ -9,10 +9,30 @@ import {
   DeleteAssetResponseSchema,
 } from "./assets.schema";
 import { authGuard } from "@/middleware/authGuard";
-import { commonErrors } from "@/core/errors/error.helpers";
+import { errorResponses, AUTHED, ROLE, VALIDATION } from "@/core/errors/error.responses";
 import { rolesGuard } from "@/middleware/roleGuard";
 
-const assetErrors = commonErrors.getStandardResponses("Asset");
+const getAssetsByApartmentErrors = errorResponses([
+  ...AUTHED,
+  ...ROLE,
+  ...VALIDATION,
+  "APARTMENT_NOT_FOUND",
+]);
+const createAssetErrors = errorResponses([
+  ...AUTHED,
+  ...ROLE,
+  ...VALIDATION,
+  "APARTMENT_NOT_FOUND",
+  "ASSET_TYPE_INVALID",
+  "RELATED_RECORD_INVALID",
+]);
+const deleteAssetErrors = errorResponses([
+  ...AUTHED,
+  ...ROLE,
+  ...VALIDATION,
+  "ASSET_NOT_FOUND",
+  "ASSET_LOCKED",
+]);
 
 export const getAssetsByApartmentRoute = createRoute({
   method: "get",
@@ -31,7 +51,7 @@ export const getAssetsByApartmentRoute = createRoute({
         },
       },
     },
-    ...assetErrors,
+    ...getAssetsByApartmentErrors,
   },
 });
 
@@ -58,7 +78,7 @@ export const createAssetRoute = createRoute({
         },
       },
     },
-    ...assetErrors,
+    ...createAssetErrors,
   },
 });
 
@@ -79,6 +99,6 @@ export const deleteAssetRoute = createRoute({
         },
       },
     },
-    ...assetErrors,
+    ...deleteAssetErrors,
   },
 });

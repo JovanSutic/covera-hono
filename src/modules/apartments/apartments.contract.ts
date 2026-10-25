@@ -12,10 +12,35 @@ import {
 } from "./apartments.schema";
 import { authGuard } from "@/middleware/authGuard";
 import { rolesGuard } from "@/middleware/roleGuard";
-import { commonErrors } from "@/core/errors/error.helpers";
+import { errorResponses, AUTHED, ROLE, APARTMENT_SCOPED, VALIDATION } from "@/core/errors/error.responses";
 import { apartmentGuard } from "@/middleware/apartmentGuard";
 
-const apartmentErrors = commonErrors.getStandardResponses("Apartment");
+const getApartmentsErrors = errorResponses([...AUTHED]);
+const getApartmentByIdErrors = errorResponses([...AUTHED, ...VALIDATION, "APARTMENT_NOT_FOUND"]);
+const createApartmentErrors = errorResponses([
+  ...AUTHED,
+  ...ROLE,
+  ...VALIDATION,
+  "USER_NOT_FOUND",
+  "LOCATION_NOT_FOUND",
+  "RELATED_RECORD_INVALID",
+]);
+const requestUploadTokensErrors = errorResponses([
+  ...AUTHED,
+  ...ROLE,
+  ...APARTMENT_SCOPED,
+  ...VALIDATION,
+  "MAX_PHOTOS_EXCEEDED",
+]);
+const confirmUploadErrors = errorResponses([
+  ...AUTHED,
+  ...ROLE,
+  ...APARTMENT_SCOPED,
+  ...VALIDATION,
+  "MAX_PHOTOS_EXCEEDED",
+  "DUPLICATE_RECORD",
+]);
+const getApartmentsByHostErrors = errorResponses([...AUTHED, ...ROLE, "USER_NOT_FOUND"]);
 
 export const getApartmentsRoute = createRoute({
   method: "get",
@@ -31,7 +56,7 @@ export const getApartmentsRoute = createRoute({
         },
       },
     },
-    ...apartmentErrors,
+    ...getApartmentsErrors,
   },
 });
 
@@ -54,7 +79,7 @@ export const getApartmentByIdRoute = createRoute({
         },
       },
     },
-    ...apartmentErrors,
+    ...getApartmentByIdErrors,
   },
 });
 
@@ -81,7 +106,7 @@ export const createApartmentRoute = createRoute({
         },
       },
     },
-    ...apartmentErrors,
+    ...createApartmentErrors,
   },
 });
 
@@ -111,7 +136,7 @@ export const requestUploadTokensRoute = createRoute({
         },
       },
     },
-    ...apartmentErrors,
+    ...requestUploadTokensErrors,
   },
 });
 
@@ -141,7 +166,7 @@ export const confirmUploadRoute = createRoute({
         },
       },
     },
-    ...apartmentErrors,
+    ...confirmUploadErrors,
   },
 });
 
@@ -159,6 +184,6 @@ export const getApartmentsByHostRoute = createRoute({
         },
       },
     },
-    ...apartmentErrors,
+    ...getApartmentsByHostErrors,
   },
 });
