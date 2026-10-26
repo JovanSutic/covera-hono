@@ -2,12 +2,12 @@ import { z } from "@hono/zod-openapi";
 import {
   SelectInspectionFlagSchema,
   InsertInspectionFlagSchema,
-  SelectAssetSchema,
 } from "@/db";
+import { AssetSchema } from "../assets/assets.schema";
 
 // Base OpenAPI Model Representation
 export const InspectionFlagSchema = SelectInspectionFlagSchema.extend({
-  assets: z.array(SelectAssetSchema).default([]),
+  assets: z.array(AssetSchema).default([]),
 }).openapi("InspectionFlag");
 
 // Request Payload Schema for Creating a Flag

@@ -4,11 +4,11 @@ import {
   InsertInspectionSchema,
   SelectReservationSchema,
   SelectApartmentShotSchema,
-  SelectAssetSchema,
   SelectApartmentImageSchema,
 } from "@/db";
 import { InspectionFlagSchema } from "./inspectionFlags.schema";
 import { ApartmentSchema } from "../apartments/apartments.schema";
+import { AssetSchema } from "../assets/assets.schema";
 
 // Base VisitLogEvent schema
 export const VisitLogEventSchema = z
@@ -32,7 +32,7 @@ export const InspectionSchema = SelectInspectionSchema.extend({
 
 // Nested Schemas for Hydrated GET Responses
 export const ShotWithAssetsSchema = SelectApartmentShotSchema.extend({
-  assets: z.array(SelectAssetSchema),
+  assets: z.array(AssetSchema),
   images: z.array(SelectApartmentImageSchema),
 }).openapi("ShotWithAssets");
 

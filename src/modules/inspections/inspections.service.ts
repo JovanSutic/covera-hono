@@ -4,13 +4,22 @@ import {
   inspectionFlags,
   inspectionFlagAssets,
   assets,
+  assetTypes,
   Inspection,
   NewInspection,
-  Asset,
 } from "@/db";
 import { Variables } from "@/types";
 import type { DetailedInspection, VisitLogEvent } from "./inspections.schema";
 import { CreateInspectionFlag, InspectionFlag } from "./inspectionFlags.schema";
+
+/**
+ * The relational query loads the catalogue row as `assetType`; the API contract names it
+ * `asset_type`. Same rename `assetsService` performs for the host payload.
+ */
+const toAssetWithType = (asset: any) => {
+  const { assetType, ...rest } = asset;
+  return { ...rest, asset_type: assetType };
+};
 
 export const inspectionsService = {
   async getByReservationId(
@@ -61,7 +70,7 @@ export const inspectionsService = {
           with: {
             flagAssets: {
               with: {
-                asset: true,
+                asset: { with: { assetType: true } },
               },
             },
           },
@@ -75,7 +84,7 @@ export const inspectionsService = {
                   with: {
                     shotAssets: {
                       with: {
-                        asset: true,
+                        asset: { with: { assetType: true } },
                       },
                     },
                   },
@@ -97,7 +106,7 @@ export const inspectionsService = {
 
       return {
         ...flagData,
-        assets: flagAssets.map((fa) => fa.asset),
+        assets: flagAssets.map(({ asset }) => toAssetWithType(asset)),
       };
     });
 
@@ -115,7 +124,7 @@ export const inspectionsService = {
         images: (reservationImages || []).filter(
           (img) => img.shotId === shot.id,
         ),
-        assets: shotAssets.map((pivot) => pivot.asset),
+        assets: shotAssets.map((pivot) => toAssetWithType(pivot.asset)),
       };
     });
 
@@ -176,7 +185,7 @@ export const inspectionsService = {
         })
         .returning();
 
-      let linkedAssets: Asset[] = [];
+      let linkedAssets: InspectionFlag["assets"] = [];
 
       // 2. Batch-insert junction records if asset IDs were passed
       if (assetIds.length > 0) {
@@ -187,11 +196,21 @@ export const inspectionsService = {
 
         await tx.insert(inspectionFlagAssets).values(pivotRecords);
 
-        // Fetch corresponding assets for the output payload
-        linkedAssets = await tx
-          .select()
+        // Fetch corresponding assets for the output payload, joined to the
+        // catalog row so each carries `asset_type` like every other payload.
+        const rows = await tx
+          .select({
+            asset: assets,
+            assetType: assetTypes,
+          })
           .from(assets)
+          .innerJoin(assetTypes, eq(assets.assetTypeId, assetTypes.id))
           .where(inArray(assets.id, assetIds));
+
+        linkedAssets = rows.map(({ asset, assetType }) => ({
+          ...asset,
+          asset_type: assetType,
+        }));
       }
 
       return {
