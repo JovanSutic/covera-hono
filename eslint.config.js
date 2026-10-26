@@ -16,6 +16,17 @@ export default [
     },
   },
 
+  // Plain-Node build/repo scripts (`scripts/gate.mjs`). Not bundled, not typechecked by
+  // tsconfig, so they only need the Node globals they actually use.
+  {
+    files: ["scripts/**/*.{js,mjs}"],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: "module",
+      globals: { console: "readonly", process: "readonly" },
+    },
+  },
+
   // Guardrails (docs/errorHandlePlan.md §7.1, §7.2).
   //
   // Both rules MUST live in one config object. Flat config replaces a rule's
