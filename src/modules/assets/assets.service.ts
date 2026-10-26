@@ -1,7 +1,7 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, asc } from "drizzle-orm";
 import { assets, NewAsset, assetTypes } from "@/db";
 import { Variables } from "@/types";
-import { Asset } from "./assets.schema";
+import { Asset, AssetType } from "./assets.schema";
 
 export const assetsService = {
   async getByApartmentId(
@@ -69,5 +69,12 @@ export const assetsService = {
       success: true,
       id: deletedAsset.id,
     };
+  },
+
+  async getAllTypes(db: Variables["db"]): Promise<AssetType[]> {
+    return db
+      .select()
+      .from(assetTypes)
+      .orderBy(asc(assetTypes.code));
   },
 };

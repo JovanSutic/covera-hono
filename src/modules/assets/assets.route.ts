@@ -3,6 +3,7 @@ import {
   getAssetsByApartmentRoute,
   createAssetRoute,
   deleteAssetRoute,
+  getAssetTypesRoute,
 } from "./assets.contract";
 import { assetsService } from "./assets.service";
 import { assetErrors } from "./assets.errors";
@@ -50,6 +51,13 @@ app.openapi(deleteAssetRoute, async (c) => {
   }
 
   return c.json(result, 200);
+});
+
+app.openapi(getAssetTypesRoute, async (c) => {
+  const db = c.get("db");
+  const assetTypesList = await assetsService.getAllTypes(db);
+
+  return c.json(assetTypesList, 200);
 });
 
 export default app;

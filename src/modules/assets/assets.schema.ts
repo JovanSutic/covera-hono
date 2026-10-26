@@ -49,3 +49,7 @@ export const DeleteAssetResponseSchema = z.object({
 
 // Export the inferred Zod type instead of Drizzle's $inferSelect
 export type Asset = z.infer<typeof AssetSchema>;
+
+export type AssetType = z.infer<typeof AssetTypeSchema>;
+
+export const AssetTypesListSchema = z.array(AssetTypeSchema).openapi("AssetTypesList");
