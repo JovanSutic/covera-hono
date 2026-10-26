@@ -9,6 +9,7 @@ const {
   mockGetByApartmentId,
   mockCreate,
   mockDelete,
+  mockGetAllTypes,
   mockCheckExistence,
   mockAssertCanModifyAsset,
   mockAssertCanModifyApartmentShots,
@@ -17,6 +18,7 @@ const {
     mockGetByApartmentId: vi.fn(),
     mockCreate: vi.fn(),
     mockDelete: vi.fn(),
+    mockGetAllTypes: vi.fn(),
     mockCheckExistence: vi.fn(),
     mockAssertCanModifyAsset: vi.fn(),
     mockAssertCanModifyApartmentShots: vi.fn(),
@@ -28,6 +30,7 @@ vi.mock("./assets.service", () => ({
     getByApartmentId: mockGetByApartmentId,
     create: mockCreate,
     delete: mockDelete,
+    getAllTypes: mockGetAllTypes,
   },
 }));
 
@@ -317,6 +320,80 @@ describe("Assets routes", () => {
 
       expect(res.status).toBe(404);
       expect((await res.json()).error.code).toBe("ASSET_NOT_FOUND");
+    });
+  });
+
+  describe("GET /assets/types", () => {
+    const mockAssetTypes = [
+      { id: VALID_ASSET_TYPE_ID, code: "COFFEE_MACHINE", category: "APPLIANCES_SMALL" },
+      { id: VALID_UUID, code: "SMART_LOCK", category: "ELECTRONICS" },
+    ];
+
+    it("should return the asset type catalog ordered A-Z by code", async () => {
+      mockGetAllTypes.mockResolvedValue(mockAssetTypes);
+
+      const res = await testApp.request("/assets/types", {
+        headers: { Authorization: MOCK_JWT },
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+
+      expect(Array.isArray(data)).toBe(true);
+      expect(data).toHaveLength(2);
+      expect(data.map((t: { code: string }) => t.code)).toEqual([
+        "COFFEE_MACHINE",
+        "SMART_LOCK",
+      ]);
+      expect(data[0].code <= data[1].code).toBe(true);
+    });
+
+    it("should be reachable and not shadowed by the /{id} route", async () => {
+      mockGetAllTypes.mockResolvedValue([]);
+
+      const res = await testApp.request("/assets/types", {
+        headers: { Authorization: MOCK_JWT },
+      });
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual([]);
+      expect(mockGetAllTypes).toHaveBeenCalledTimes(1);
+    });
+
+    it("should return 401 with the canonical envelope if the token is missing", async () => {
+      mockGetUser.mockResolvedValue({
+        data: { user: null },
+        error: new Error("Missing token"),
+      });
+
+      const res = await testApp.request("/assets/types");
+
+      expect(res.status).toBe(401);
+      const body: any = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("AUTH_TOKEN_MISSING");
+      expect(body.error.message).toMatch(/Authentication is required/);
+      expect(mockGetAllTypes).not.toHaveBeenCalled();
+    });
+
+    it("should return 403 FORBIDDEN_ROLE for a guest", async () => {
+      setTestUser("guest");
+      mockedUserService.getByAuthId.mockResolvedValue({
+        id: VALID_UUID,
+        authId: VALID_UUID,
+        role: "guest",
+        status: "confirmed",
+      });
+
+      const res = await testApp.request("/assets/types", {
+        headers: { Authorization: MOCK_JWT },
+      });
+
+      expect(res.status).toBe(403);
+      const body: any = await res.json();
+      expect(body.error.code).toBe("FORBIDDEN_ROLE");
+      expect(body.error.message).toMatch(/only available to: admin, host/);
+      expect(mockGetAllTypes).not.toHaveBeenCalled();
     });
   });
 });
