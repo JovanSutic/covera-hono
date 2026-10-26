@@ -294,6 +294,10 @@ describe("Users routes", () => {
     });
 
     expect(res.status).toBe(400);
+    const body: any = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe("VALIDATION_ERROR");
+    expect(body.error.details[0].field).toMatch(/^body\./);
   });
 
   it("POST /update-password should return 400 if password lacks complexity requirements", async () => {
@@ -314,5 +318,10 @@ describe("Users routes", () => {
     });
 
     expect(res.status).toBe(400);
+    const body: any = await res.json();
+    expect(body.error.code).toBe("VALIDATION_ERROR");
+    // The password complexity rule is authored on the field, so the reported
+    // path must name it rather than collapsing to the whole body.
+    expect(body.error.details.some((d: any) => d.field === "body.password")).toBe(true);
   });
 });

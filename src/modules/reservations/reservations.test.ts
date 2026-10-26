@@ -295,6 +295,26 @@ describe("Reservations routes", () => {
   });
 
   describe("POST /reservations", () => {
+    it("should return VALIDATION_ERROR with body-qualified details for a bad body", async () => {
+      setupSuccessfulGuards("host");
+
+      const res = await testApp.request("/reservations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: MOCK_JWT,
+        },
+        body: JSON.stringify({}),
+      });
+
+      expect(res.status).toBe(400);
+      const body: any = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("VALIDATION_ERROR");
+      expect(body.error.details.length).toBeGreaterThan(0);
+      expect(body.error.details[0].field).toMatch(/^body\./);
+    });
+
     it("should create a reservation successfully for apartment owner", async () => {
       mockAssertApartmentOwnership.mockResolvedValue(undefined);
       mockAssertNoOverlappingReservation.mockResolvedValue(undefined); // <-- Pass overlap assertion

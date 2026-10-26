@@ -182,6 +182,9 @@ describe("Assets routes", () => {
       });
 
       expect(res.status).toBe(400);
+      const body: any = await res.json();
+      expect(body.error.code).toBe("VALIDATION_ERROR");
+      expect(body.error.details[0].field).toBe("param.apartmentId");
     });
   });
 
@@ -256,6 +259,10 @@ describe("Assets routes", () => {
       });
 
       expect(res.status).toBe(400);
+      const body: any = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("VALIDATION_ERROR");
+      expect(body.error.details[0].field).toMatch(/^body\./);
     });
   });
 

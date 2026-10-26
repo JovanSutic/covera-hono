@@ -57,6 +57,13 @@ describe("mapPersistenceError", () => {
     expect(r.code).toBe("INVALID_IDENTIFIER");
   });
 
+  it("maps 23514 to a 400 CONSTRAINT_VIOLATION", () => {
+    const r = mapPersistenceError(wrapped("23514", "reservations_dates_check"))!;
+    expect(r.status).toBe(400);
+    expect(r.code).toBe("CONSTRAINT_VIOLATION");
+    expect(r.message).toBe("The submitted values violate a data rule.");
+  });
+
   it.each(["22007", "22008"])("maps %s to a 400 INVALID_DATETIME", (sqlstate) => {
     const r = mapPersistenceError(wrapped(sqlstate))!;
     expect(r.status).toBe(400);

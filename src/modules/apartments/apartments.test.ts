@@ -203,6 +203,26 @@ describe("Apartments routes", () => {
     expect(mockCheckExistence).toHaveBeenCalledTimes(2);
   });
 
+  it("POST /apartments should return VALIDATION_ERROR with body-qualified details", async () => {
+    const res = await testApp.request("/apartments", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: MOCK_JWT,
+      },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(400);
+    const body: any = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe("VALIDATION_ERROR");
+    expect(body.error.details.length).toBeGreaterThan(0);
+    expect(body.error.details[0].field).toMatch(/^body\./);
+    // The existence assertions must not run for a body that never validated.
+    expect(mockCheckExistence).not.toHaveBeenCalled();
+  });
+
   it("POST /apartments should return 404 if the owner or location does not exist", async () => {
     mockCheckExistence.mockRejectedValueOnce(apartmentErrors.userNotFound({ id: INVALID_UUID }));
 
