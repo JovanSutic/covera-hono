@@ -11,9 +11,9 @@ class FakeDrizzleQueryError extends Error {
 }
 class FakePostgresError extends Error {
   code = "23505";
-  constraint_name = "asset_types_code_unique";
+  constraint_name = "assets_pkey";
   constructor() {
-    super('duplicate key value violates unique constraint "asset_types_code_unique"');
+    super('duplicate key value violates unique constraint "assets_pkey"');
   }
 }
 
@@ -103,8 +103,8 @@ describe("toErrorResponse", () => {
     expect(status).toBe(409);
     expect(body.error.code).toBe("DUPLICATE_RECORD");
     expect(body.error.message).toBe("A record with these values already exists.");
-    expect(body.error.message).not.toMatch(/duplicate key|asset_types_code_unique/);
-    expect((body.error as any).meta?.constraint).toBe("asset_types_code_unique");
+    expect(body.error.message).not.toMatch(/duplicate key|assets_pkey/);
+    expect((body.error as any).meta?.constraint).toBe("assets_pkey");
   });
 
   it("maps unknown SQLSTATEs to 500", () => {

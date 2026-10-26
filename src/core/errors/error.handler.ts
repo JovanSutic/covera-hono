@@ -4,6 +4,7 @@ import type { App } from "@/types";
 import { HTTPException } from "hono/http-exception";
 import { AppError } from "./error.exceptions";
 import { ERROR_REGISTRY, type ErrorCode } from "./error.codes";
+import { mapPersistenceError } from "./error.mapper";
 import type { ErrorDetail } from "./error.schema";
 
 /** meta is developer-facing: never shipped in production. */
@@ -140,35 +141,6 @@ export const validationHook: NonNullable<
 };
 
 // ---------------------------------------------------------------------------
-// Persistence translation (§4.4)
-// ---------------------------------------------------------------------------
-
-/** Walks the `cause` chain for a Postgres SQLSTATE (5 chars, e.g. "23505"). */
-const findSqlState = (
-  err: unknown,
-): { code?: string; constraint?: string; message?: string } => {
-  let current: any = err;
-  for (let depth = 0; current && depth < 5; depth++) {
-    if (typeof current.code === "string" && /^[0-9A-Z]{5}$/.test(current.code)) {
-      return { code: current.code, constraint: current.constraint_name, message: current.message };
-    }
-    current = current.cause;
-  }
-  return {};
-};
-
-/** SQLSTATE → client-facing response. The DB's own text never reaches the client. */
-const SQLSTATE_MAP: Record<string, { status: ContentfulStatusCode; code: ErrorCode; message: string }> = {
-  "23505": { status: 409, code: "DUPLICATE_RECORD",        message: "A record with these values already exists." },
-  "23503": { status: 409, code: "RELATED_RECORD_INVALID",  message: "A referenced record does not exist or is still in use." },
-  "23502": { status: 400, code: "MISSING_REQUIRED_FIELD",  message: "A required field was missing from the request." },
-  "23514": { status: 400, code: "CONSTRAINT_VIOLATION",    message: "The submitted values violate a data rule." },
-  "22P02": { status: 400, code: "INVALID_IDENTIFIER",      message: "One of the identifiers in the request is not a valid value." },
-  "22007": { status: 400, code: "INVALID_DATETIME",        message: "One of the dates in the request is not a valid date." },
-  "22008": { status: 400, code: "INVALID_DATETIME",        message: "One of the dates in the request is not a valid date." },
-};
-
-// ---------------------------------------------------------------------------
 // The one entry point used by app.onError
 // ---------------------------------------------------------------------------
 
@@ -206,8 +178,7 @@ export const toErrorResponse = (
   }
 
   // 3. Constraint violations the domain layer could not know about.
-  const pg = findSqlState(err);
-  const mapped = pg.code ? SQLSTATE_MAP[pg.code] : undefined;
+  const mapped = mapPersistenceError(err);
   if (mapped) {
     return {
       status: mapped.status,
@@ -215,7 +186,7 @@ export const toErrorResponse = (
         code: mapped.code,
         message: mapped.message,
         status: mapped.status,
-        meta: { origin: "PERSISTENCE", sqlstate: pg.code, constraint: pg.constraint, driver: pg.message },
+        meta: mapped.meta,
       }),
     };
   }
