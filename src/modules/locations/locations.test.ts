@@ -84,33 +84,30 @@ describe("Locations routes", () => {
     expect(data[0].name).toBe("Rome");
   });
 
-  it("GET /locations should return 401 if token is missing", async () => {
-    mockGetUser.mockResolvedValue({
-      data: { user: null },
-      error: new Error("Missing token"),
-    });
+  it("GET /locations should return 401 with the canonical envelope if token is missing", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: new Error("Missing token") });
 
     const res = await testApp.request("/locations");
     expect(res.status).toBe(401);
+
+    const body: any = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe("AUTH_TOKEN_MISSING");
+    expect(body.error.message).toMatch(/Authentication is required/);
   });
 
-  it("GET /locations should return 403 if user lacks admin permissions", async () => {
-    mockGetUser.mockResolvedValue({
-      data: { user: { id: VALID_UUID } },
-      error: null,
-    });
-
+  it("GET /locations should return 403 FORBIDDEN_ROLE for a non-admin", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: VALID_UUID } }, error: null });
     mockedUserService.getByAuthId.mockResolvedValue({
-      id: VALID_UUID,
-      authId: VALID_UUID,
-      role: "guest",
-      status: "confirmed",
+      id: VALID_UUID, authId: VALID_UUID, role: "guest", status: "confirmed",
     });
 
-    const res = await testApp.request("/locations", {
-      headers: { Authorization: MOCK_JWT },
-    });
+    const res = await testApp.request("/locations", { headers: { Authorization: MOCK_JWT } });
     expect(res.status).toBe(403);
+
+    const body: any = await res.json();
+    expect(body.error.code).toBe("FORBIDDEN_ROLE");
+    expect(body.error.message).toMatch(/only available to: admin/);
   });
 
   it("POST /locations should create a new location", async () => {
@@ -145,5 +142,25 @@ describe("Locations routes", () => {
     expect(data.name).toBe("Rome");
     expect(data.country).toBe("Italy");
     expect(data.type).toBe("city");
+  });
+
+  it("POST /locations should return VALIDATION_ERROR with body-qualified details", async () => {
+    setupSuccessfulGuards();
+
+    const res = await testApp.request("/locations", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: MOCK_JWT,
+      },
+      body: JSON.stringify({ country: "Italy", type: "city" }),
+    });
+
+    expect(res.status).toBe(400);
+
+    const body: any = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe("VALIDATION_ERROR");
+    expect(body.error.details[0].field).toMatch(/^body\./);
   });
 });

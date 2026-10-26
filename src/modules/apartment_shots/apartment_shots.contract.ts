@@ -7,10 +7,24 @@ import {
   SyncApartmentShotsSchema,
 } from "./apartment_shots.schema";
 import { authGuard } from "@/middleware/authGuard";
-import { commonErrors } from "@/core/errors/error.helpers";
+import { errorResponses, AUTHED, ROLE, VALIDATION } from "@/core/errors/error.responses";
 import { rolesGuard } from "@/middleware/roleGuard";
 
-const shotErrors = commonErrors.getStandardResponses("ApartmentShot");
+const getShotsByApartmentErrors = errorResponses([
+  ...AUTHED,
+  ...ROLE,
+  ...VALIDATION,
+  "APARTMENT_NOT_FOUND",
+  "RESERVATION_NOT_FOUND",
+]);
+const syncApartmentShotsErrors = errorResponses([
+  ...AUTHED,
+  ...ROLE,
+  ...VALIDATION,
+  "APARTMENT_NOT_FOUND",
+  "APARTMENT_SHOTS_LOCKED",
+  "RELATED_RECORD_INVALID",
+]);
 
 export const getShotsByApartmentRoute = createRoute({
   method: "get",
@@ -30,7 +44,7 @@ export const getShotsByApartmentRoute = createRoute({
         },
       },
     },
-    ...shotErrors,
+    ...getShotsByApartmentErrors,
   },
 });
 
@@ -58,6 +72,6 @@ export const syncApartmentShotsRoute = createRoute({
         },
       },
     },
-    ...shotErrors,
+    ...syncApartmentShotsErrors,
   },
 });

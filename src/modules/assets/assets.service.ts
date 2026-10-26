@@ -35,10 +35,6 @@ export const assetsService = {
       .values(asset)
       .returning();
 
-    if (!createdAsset.assetTypeId) {
-      throw new Error("ASSET_TYPE_ID_REQUIRED");
-    }
-
     // 2. Query the linked catalog row from asset_types
     const [catalogType] = await db
       .select()

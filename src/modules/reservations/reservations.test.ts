@@ -2,10 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTestApp } from "@/core/utils/test-factory";
 import reservationsApp from "./reservations.route";
 import { usersService } from "../users/users.service";
-import {
-  ForbiddenException,
-  NotFoundException,
-} from "@/core/errors/error.exceptions";
+import { apartmentErrors } from "../apartments/apartments.errors";
 
 const {
   mockGetByApartmentId,
@@ -289,10 +286,35 @@ describe("Reservations routes", () => {
       );
 
       expect(res.status).toBe(403);
+
+      const body: any = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("FORBIDDEN_APARTMENT_ACCESS");
+      expect(body.error.message).toMatch(/do not have access/);
     });
   });
 
   describe("POST /reservations", () => {
+    it("should return VALIDATION_ERROR with body-qualified details for a bad body", async () => {
+      setupSuccessfulGuards("host");
+
+      const res = await testApp.request("/reservations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: MOCK_JWT,
+        },
+        body: JSON.stringify({}),
+      });
+
+      expect(res.status).toBe(400);
+      const body: any = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("VALIDATION_ERROR");
+      expect(body.error.details.length).toBeGreaterThan(0);
+      expect(body.error.details[0].field).toMatch(/^body\./);
+    });
+
     it("should create a reservation successfully for apartment owner", async () => {
       mockAssertApartmentOwnership.mockResolvedValue(undefined);
       mockAssertNoOverlappingReservation.mockResolvedValue(undefined); // <-- Pass overlap assertion
@@ -334,7 +356,7 @@ describe("Reservations routes", () => {
 
     it("should return 404 when creating a reservation for unowned apartment", async () => {
       mockAssertApartmentOwnership.mockRejectedValueOnce(
-        new NotFoundException(`Apartment with ID  not found`),
+        apartmentErrors.notFound({ apartmentId: VALID_APARTMENT_ID }),
       );
 
       const input = {
@@ -354,6 +376,12 @@ describe("Reservations routes", () => {
       });
 
       expect(res.status).toBe(404);
+
+      const body: any = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("APARTMENT_NOT_FOUND");
+      expect(body.error.message).toBe("Apartment does not exist.");
+
       expect(mockCreate).not.toHaveBeenCalled();
     });
   });
@@ -437,6 +465,11 @@ describe("Reservations routes", () => {
       );
 
       expect(res.status).toBe(404);
+
+      const body: any = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("RESERVATION_NOT_FOUND");
+      expect(body.error.message).toBe("Reservation does not exist.");
     });
   });
 });

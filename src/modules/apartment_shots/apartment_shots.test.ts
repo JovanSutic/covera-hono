@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTestApp } from "@/core/utils/test-factory";
 import apartmentShotsApp from "./apartment_shots.route";
 import { usersService } from "../users/users.service";
-import { ConflictException } from "@/core/errors/error.exceptions";
+import { shotErrors } from "./apartment_shots.errors";
 
 const {
   mockGetByApartmentId,
@@ -118,14 +118,6 @@ const testApp = createTestApp({
   }),
 });
 
-// Map domain ConflictException to 409 status code in test app environment
-testApp.onError((err, c) => {
-  if (err instanceof ConflictException) {
-    return c.json({ message: err.message }, 409);
-  }
-  return c.json({ message: err.message || "Internal Error" }, 500);
-});
-
 testApp.route("/apartment-shots", apartmentShotsApp);
 
 const setupSuccessfulGuards = (
@@ -235,6 +227,10 @@ describe("Apartment Shots routes", () => {
         `/apartment-shots/apartment/${VALID_APARTMENT_ID}`,
       );
       expect(res.status).toBe(401);
+
+      const body: any = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("AUTH_TOKEN_MISSING");
     });
 
     it("should return 400 for invalid apartment UUID format", async () => {
@@ -246,6 +242,11 @@ describe("Apartment Shots routes", () => {
       );
 
       expect(res.status).toBe(400);
+
+      const body: any = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("VALIDATION_ERROR");
+      expect(body.error.details[0].field).toMatch(/^param\./);
     });
   });
 
@@ -308,11 +309,7 @@ describe("Apartment Shots routes", () => {
     });
 
     it("should return 409 when assertCanModifyApartmentShots guard rejects", async () => {
-      mockAssertCanModifyApartmentShots.mockRejectedValue(
-        new ConflictException(
-          `Cannot sync or modify shots for apartment '${VALID_APARTMENT_ID}': there is an active reservation with photo proof locked.`,
-        ),
-      );
+      mockAssertCanModifyApartmentShots.mockRejectedValue(shotErrors.shotsLocked());
 
       const res = await testApp.request(
         `/apartment-shots/apartment/${VALID_APARTMENT_ID}`,
@@ -327,6 +324,12 @@ describe("Apartment Shots routes", () => {
       );
 
       expect(res.status).toBe(409);
+
+      const body: any = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("APARTMENT_SHOTS_LOCKED");
+      expect(body.error.message).toMatch(/cannot be changed because/);
+
       expect(mockSyncShots).not.toHaveBeenCalled();
     });
 
@@ -351,6 +354,11 @@ describe("Apartment Shots routes", () => {
       );
 
       expect(res.status).toBe(400);
+
+      const body: any = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("VALIDATION_ERROR");
+      expect(body.error.details[0].field).toMatch(/^body\./);
     });
 
     it("should allow syncing an empty array to remove all shots", async () => {

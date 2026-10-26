@@ -1,16 +1,15 @@
-import { OpenAPIHono } from "@hono/zod-openapi";
+import { createModuleApp } from "@/core/utils/module-app";
 import {
   getShotsByApartmentRoute,
   syncApartmentShotsRoute,
 } from "./apartment_shots.contract";
 import { apartmentShotsService } from "./apartment_shots.service";
+import { shotErrors } from "./apartment_shots.errors";
 import { assertCanModifyApartmentShots, checkExistence } from "@/core/utils/db-validator";
-import { App } from "@/types";
 import { reservations } from "@/db";
-import { NotFoundException } from "@/core/errors/error.exceptions";
 import { reservationsService } from "../reservations/reservations.service";
 
-const app = new OpenAPIHono<App>();
+const app = createModuleApp();
 
 app.openapi(getShotsByApartmentRoute, async (c) => {
   const db = c.get("db");
@@ -25,7 +24,7 @@ app.openapi(getShotsByApartmentRoute, async (c) => {
     const reservation = await reservationsService.getById(db, reservationId);
 
     if (!reservation) {
-      throw new NotFoundException(`Reservation with ID ${reservationId}`);
+      throw shotErrors.reservationNotFound({ id: reservationId });
     }
 
     cutoffDate = new Date(reservation.createdAt);

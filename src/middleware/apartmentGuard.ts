@@ -1,8 +1,14 @@
- import { createMiddleware } from "hono/factory";
+import { createMiddleware } from "hono/factory";
 import { App } from "@/types";
 import { usersService } from "../modules/users/users.service";
 import { apartmentsService } from "../modules/apartments/apartments.service";
 import { reservationsService } from "../modules/reservations/reservations.service";
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+  UnauthorizedException,
+} from "@/core/errors/error.exceptions";
 
 export const apartmentGuard = (adminAllowed = false) => {
   return createMiddleware<App>(async (c, next) => {
@@ -10,16 +16,24 @@ export const apartmentGuard = (adminAllowed = false) => {
     const authUser = c.get("authUser");
 
     if (!authUser) {
-      return c.json({ message: "Unauthorized: Authentication missing" }, 401);
+      throw new UnauthorizedException({
+        code: "AUTH_TOKEN_MISSING",
+        message: "Authentication is required for this endpoint. Provide a Bearer token.",
+        meta: { origin: "GUARD" },
+      });
     }
 
     const user = await usersService.getByAuthId(db, authUser.id);
 
     if (!user || user.status !== "confirmed") {
-      return c.json({ message: "Bad Request: User context missing" }, 400);
+      throw new ForbiddenException({
+        code: "FORBIDDEN_ROLE",
+        message: "Your account is not confirmed, so it cannot access this resource.",
+        meta: { origin: "GUARD", status: user?.status },
+      });
     }
 
-    if (adminAllowed && user?.role === "admin") {
+    if (adminAllowed && user.role === "admin") {
       await next();
       return;
     }
@@ -27,35 +41,38 @@ export const apartmentGuard = (adminAllowed = false) => {
     const targetId = c.req.param("apartmentId") || c.req.param("id");
 
     if (!targetId) {
-      return c.json(
-        { message: "Bad Request: Missing apartment or reservation parameter in URL path" },
-        400,
-      );
+      throw new BadRequestException({
+        code: "MISSING_REQUIRED_FIELD",
+        message: "This endpoint requires an apartment or reservation identifier in the URL path.",
+        details: [{ field: "param", message: "Expected an 'apartmentId' or 'id' path parameter." }],
+        meta: { origin: "GUARD" },
+      });
     }
 
+    // Resolution fallback: the path segment may be an apartment id or a reservation id.
     let apartment = await apartmentsService.getById(db, targetId);
 
     if (!apartment) {
       const reservation = await reservationsService.getById(db, targetId);
       if (reservation?.apartmentId) {
-        apartment = await apartmentsService.getById(
-          db,
-          reservation.apartmentId,
-        );
+        apartment = await apartmentsService.getById(db, reservation.apartmentId);
       }
     }
 
     if (!apartment) {
-      return c.json({ message: "Not Found: Apartment does not exist" }, 404);
+      throw new NotFoundException({
+        code: "APARTMENT_NOT_FOUND",
+        message: "Apartment does not exist.",
+        meta: { origin: "GUARD", id: targetId },
+      });
     }
 
-    const apartmentOwnerId = apartment.owner;
-
-    if (apartmentOwnerId !== user?.id) {
-      return c.json(
-        { message: "Forbidden: You do not have access to this apartment" },
-        403,
-      );
+    if (apartment.owner !== user.id) {
+      throw new ForbiddenException({
+        code: "FORBIDDEN_APARTMENT_ACCESS",
+        message: "You do not have access to this apartment.",
+        meta: { origin: "GUARD", apartmentId: apartment.id },
+      });
     }
 
     await next();

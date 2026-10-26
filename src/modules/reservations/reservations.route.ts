@@ -1,4 +1,4 @@
-import { OpenAPIHono } from "@hono/zod-openapi";
+import { createModuleApp } from "@/core/utils/module-app";
 import {
   getReservationsByApartmentRoute,
   createReservationRoute,
@@ -6,18 +6,14 @@ import {
   deleteReservationRoute,
 } from "./reservations.contract";
 import { reservationsService } from "./reservations.service";
-import {
-  NotFoundException,
-  UnauthorizedException,
-} from "@/core/errors/error.exceptions";
+import { reservationErrors } from "./reservations.errors";
 import {
   assertApartmentOwnership,
   assertNoOverlappingReservation,
   checkExistence,
 } from "@/core/utils/db-validator";
-import { App } from "@/types";
 
-const app = new OpenAPIHono<App>();
+const app = createModuleApp();
 
 app.openapi(getReservationsByApartmentRoute, async (c) => {
   const db = c.get("db");
@@ -41,7 +37,7 @@ app.openapi(createReservationRoute, async (c) => {
   const user = c.get("user");
 
   if (!user) {
-    throw new UnauthorizedException("Reservation");
+    throw reservationErrors.unauthenticated();
   }
 
   await assertApartmentOwnership(db, body.apartmentId, {
@@ -71,7 +67,7 @@ app.openapi(updateReservationRoute, async (c) => {
   const updatedReservation = await reservationsService.update(db, id, body);
 
   if (!updatedReservation) {
-    throw new NotFoundException("Reservation");
+    throw reservationErrors.notFound({ id });
   }
 
   return c.json(updatedReservation, 200);
@@ -84,7 +80,7 @@ app.openapi(deleteReservationRoute, async (c) => {
   const result = await reservationsService.delete(db, id);
 
   if (!result) {
-    throw new NotFoundException("Reservation");
+    throw reservationErrors.notFound({ id });
   }
 
   return c.json(result, 200);

@@ -2,6 +2,7 @@ import { createMiddleware } from "hono/factory";
 import { env } from "hono/adapter"; // Crucial multi-runtime adapter
 import { createSupabaseAdmin } from "@/lib/supabase";
 import { App } from "@/types";
+import { AppError } from "@/core/errors/error.exceptions";
 
 export const supabaseMiddleware = createMiddleware<App>(async (c, next) => {
   const runtimeEnv = env<App["Bindings"]>(c);
@@ -10,7 +11,11 @@ export const supabaseMiddleware = createMiddleware<App>(async (c, next) => {
   const supabaseServiceRole = runtimeEnv.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl || !supabaseServiceRole) {
-    throw new Error("Missing Supabase configuration environment variables.");
+    throw new AppError(500, {
+      code: "HTTP_ERROR",
+      message: "The service is not correctly configured and cannot serve requests right now.",
+      meta: { origin: "BOOTSTRAP", missing: "SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY" },
+    });
   }
 
   const supabase = createSupabaseAdmin({

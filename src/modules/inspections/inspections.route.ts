@@ -1,4 +1,4 @@
-import { OpenAPIHono } from "@hono/zod-openapi";
+import { createModuleApp } from "@/core/utils/module-app";
 import {
   createInspectionRoute,
   createInspectionFlagRoute,
@@ -7,14 +7,10 @@ import {
   pingInspectionRoute,
 } from "./inspections.contract";
 import { inspectionsService } from "./inspections.service";
-import {
-  NotFoundException,
-  UnauthorizedException,
-} from "@/core/errors/error.exceptions";
+import { inspectionErrors } from "./inspections.errors";
 import { assertCanCreateFlag, assertCanCreateInspection, checkExistence } from "@/core/utils/db-validator";
-import { App } from "@/types";
 
-const app = new OpenAPIHono<App>();
+const app = createModuleApp();
 
 app.openapi(createInspectionRoute, async (c) => {
   const db = c.get("db");
@@ -22,7 +18,7 @@ app.openapi(createInspectionRoute, async (c) => {
   const user = c.get("user");
 
   if (!user) {
-    throw new UnauthorizedException("Inspection");
+    throw inspectionErrors.unauthenticated();
   }
 
   await assertCanCreateInspection(db, body.reservationId);
@@ -56,16 +52,7 @@ app.openapi(getInspectionByIdRoute, async (c) => {
   const inspection = await inspectionsService.getById(c.var.db, id, detailed);
 
   if (!inspection) {
-    return c.json(
-      {
-        success: false,
-        error: {
-          code: "NOT_FOUND",
-          message: "Inspection not found",
-        },
-      },
-      404,
-    );
+    throw inspectionErrors.notFound({ id });
   }
 
   return c.json(inspection, 200);
@@ -83,7 +70,7 @@ app.openapi(getInspectionByReservationRoute, async (c) => {
   );
 
   if (!inspection) {
-    throw new NotFoundException("Inspection");
+    throw inspectionErrors.notFound({ reservationId });
   }
 
   return c.json(inspection, 200);
@@ -97,7 +84,7 @@ app.openapi(pingInspectionRoute, async (c) => {
   const tracked = await inspectionsService.recordVisit(db, id, userAgent);
 
   if (!tracked) {
-    throw new NotFoundException("Inspection");
+    throw inspectionErrors.notFound({ id });
   }
 
   return c.json({ success: true, tracked: true }, 200);

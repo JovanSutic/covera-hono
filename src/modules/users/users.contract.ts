@@ -9,9 +9,19 @@ import {
 } from "./users.schema";
 import { authGuard } from "@/middleware/authGuard";
 import { rolesGuard } from "@/middleware/roleGuard";
-import { commonErrors } from "@/core/errors/error.helpers";
+import { errorResponses, AUTHED, ROLE, VALIDATION } from "@/core/errors/error.responses";
 
-const userErrors = commonErrors.getStandardResponses("User");
+const getUsersErrors = errorResponses([...AUTHED, ...ROLE, ...VALIDATION]);
+const getUserByIdErrors = errorResponses([...AUTHED, ...VALIDATION, "USER_NOT_FOUND"]);
+const createUserErrors = errorResponses([
+  ...AUTHED,
+  ...ROLE,
+  ...VALIDATION,
+  "DUPLICATE_RECORD",
+  "AUTH_PROVIDER_ERROR",
+]);
+const inviteUserErrors = errorResponses([...AUTHED, ...ROLE, "USER_NOT_FOUND", "INVITATION_ERROR"]);
+const updatePasswordErrors = errorResponses([...AUTHED, ...VALIDATION, "AUTH_PROVIDER_ERROR"]);
 
 export const getUsersRoute = createRoute({
   method: "get",
@@ -30,8 +40,8 @@ export const getUsersRoute = createRoute({
           schema: GetUsersResponseSchema,
         },
       },
-      ...userErrors,
     },
+    ...getUsersErrors,
   },
 });
 
@@ -56,7 +66,7 @@ export const getUserByIdRoute = createRoute({
         },
       },
     },
-    ...userErrors,
+    ...getUserByIdErrors,
   },
 });
 
@@ -80,7 +90,7 @@ export const getUserByAuthIdRoute = createRoute({
         },
       },
     },
-    ...userErrors,
+    ...getUserByIdErrors,
   },
 });
 
@@ -108,7 +118,7 @@ export const createUserRoute = createRoute({
         },
       },
     },
-    ...userErrors,
+    ...createUserErrors,
   },
 });
 
@@ -130,7 +140,7 @@ export const inviteUserRoute = createRoute({
         },
       },
     },
-    ...userErrors,
+    ...inviteUserErrors,
   },
 });
 
@@ -156,6 +166,6 @@ export const updatePasswordRoute = createRoute({
         },
       },
     },
-    ...userErrors,
+    ...updatePasswordErrors,
   },
 });

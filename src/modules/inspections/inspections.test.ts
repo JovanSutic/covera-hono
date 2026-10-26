@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTestApp } from "@/core/utils/test-factory";
 import inspectionsApp from "./inspections.route";
 import { usersService } from "../users/users.service";
-import { NotFoundException } from "@/core/errors/error.exceptions";
+import { inspectionErrors } from "./inspections.errors";
 
 const {
   mockGetById,
@@ -177,7 +177,7 @@ describe("Inspections routes", () => {
 
     it("should return 404 if reservation does not exist", async () => {
       mockAssertCanCreateInspection.mockRejectedValueOnce(
-        new NotFoundException("Reservation"),
+        inspectionErrors.reservationNotFound({ id: VALID_RESERVATION_ID }),
       );
 
       const input = {
@@ -252,6 +252,18 @@ describe("Inspections routes", () => {
       );
     });
 
+    it("should return VALIDATION_ERROR with param-qualified details for a malformed id", async () => {
+      // This route is unauthenticated, so no guard setup is needed.
+      const res = await testApp.request("/inspections/not-a-uuid");
+
+      expect(res.status).toBe(400);
+      const body: any = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("VALIDATION_ERROR");
+      expect(body.error.details.length).toBeGreaterThan(0);
+      expect(body.error.details[0].field).toBe("param.id");
+    });
+
     it("should return 404 if inspection by ID is not found", async () => {
       mockGetById.mockResolvedValue(null);
 
@@ -260,6 +272,10 @@ describe("Inspections routes", () => {
       });
 
       expect(res.status).toBe(404);
+      const body: any = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("INSPECTION_NOT_FOUND");
+      expect(body.error.message).toBe("Inspection does not exist.");
     });
   });
 

@@ -1,4 +1,4 @@
-import { OpenAPIHono } from "@hono/zod-openapi";
+import { createModuleApp } from "@/core/utils/module-app";
 import {
   getApartmentsRoute,
   getApartmentByIdRoute,
@@ -7,13 +7,12 @@ import {
   confirmUploadRoute,
   getApartmentsByHostRoute,
 } from "./apartments.contract";
-import { NotFoundException } from "@/core/errors/error.exceptions";
 import { apartmentsService } from "./apartments.service";
-import { App } from "@/types";
+import { apartmentErrors } from "./apartments.errors";
 import { checkExistence } from "@/core/utils/db-validator";
 import { usersService } from "../users/users.service";
 
-const app = new OpenAPIHono<App>();
+const app = createModuleApp();
 
 app.openapi(getApartmentsRoute, async (c) => {
   const db = c.get("db");
@@ -29,7 +28,7 @@ app.openapi(getApartmentByIdRoute, async (c) => {
   const apartment = await apartmentsService.getById(db, id);
 
   if (!apartment) {
-    throw new NotFoundException("Apartment");
+    throw apartmentErrors.notFound({ id });
   }
 
   return c.json(apartment, 200);
@@ -90,7 +89,9 @@ app.openapi(getApartmentsByHostRoute, async (c) => {
 
   const user = await usersService.getByAuthId(db, authUser.id);
   if (!user) {
-    throw new NotFoundException("User");
+    // Deliberate 404, not 403: the caller is authenticated but has no user row. Returning 403
+    // here would confirm which accounts exist; 404 leaks nothing. See docs/errorHandlePlan.md 5.4.
+    throw apartmentErrors.userNotFound({ authId: authUser.id });
   }
 
   const userApartments = await apartmentsService.getByOwnerId(db, user.id);

@@ -1,21 +1,29 @@
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import {
+  AppError,
   NotFoundException,
   ForbiddenException,
   ConflictException,
   BadRequestException,
 } from "@/core/errors/error.exceptions";
+import type { ErrorCode } from "@/core/errors/error.codes";
 import { inspections, reservations, users, locations, apartments, inspectionFlags, assets, apartmentShotAssets, apartmentShots, assetTypes } from "@/db";
 
-const schemaRegistry = {
-  users: users,
-  locations: locations,
-  apartments: apartments,
-  reservations: reservations,
-  inspections: inspections,
-  assets: assets,
-  assetTypes: assetTypes
-} as const;
+/**
+ * Maps a registry resource key to its table and its NOT_FOUND code.
+ * Adding a resource here is what makes `checkExistence(db, "<key>", id)` type-check.
+ */
+const resourceRegistry = {
+  users:        { table: users,        code: "USER_NOT_FOUND",        label: "User" },
+  locations:    { table: locations,    code: "LOCATION_NOT_FOUND",    label: "Location" },
+  apartments:   { table: apartments,   code: "APARTMENT_NOT_FOUND",   label: "Apartment" },
+  reservations: { table: reservations, code: "RESERVATION_NOT_FOUND", label: "Reservation" },
+  inspections:  { table: inspections,  code: "INSPECTION_NOT_FOUND",  label: "Inspection" },
+  assets:       { table: assets,       code: "ASSET_NOT_FOUND",       label: "Asset" },
+  assetTypes:   { table: assetTypes,   code: "ASSET_TYPE_NOT_FOUND",  label: "Asset type" },
+} as const satisfies Record<string, { table: unknown; code: ErrorCode; label: string }>;
+
+type ResourceType = keyof typeof resourceRegistry;
 
 interface OwnershipContext {
   userId: string;
@@ -23,29 +31,38 @@ interface OwnershipContext {
   allowAdmin?: boolean;
 }
 
-type ResourceType = keyof typeof schemaRegistry;
-
+/**
+ * Asserts that a row exists.
+ * Order: existence only.
+ */
 export async function checkExistence(
   db: any,
   resource: ResourceType,
   id: string,
 ): Promise<void> {
-  const table = schemaRegistry[resource];
+  const entry = resourceRegistry[resource];
 
-  if (!table) {
-    throw new Error(
-      `Developer Error: Resource '${resource}' is not registered in checkExistence schemaRegistry.`,
-    );
+  // Unreachable via the type system; a real assertion failure, not a client error.
+  if (!entry) {
+    throw new AppError(500, {
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Something went wrong on our end.",
+      meta: { origin: "DEVELOPER", reason: `Unregistered resource '${resource}'` },
+    });
   }
 
-  const result = await db
-    .select({ id: (table as any).id })
-    .from(table)
-    .where(eq((table as any).id, id))
+  const [row] = await db
+    .select({ id: (entry.table as any).id })
+    .from(entry.table)
+    .where(eq((entry.table as any).id, id))
     .limit(1);
 
-  if (result.length === 0) {
-    throw new NotFoundException(`${resource.slice(0, -1)} with ID ${id}`);
+  if (!row) {
+    throw new NotFoundException({
+      code: entry.code,
+      message: `${entry.label} does not exist.`,
+      meta: { origin: "DOMAIN", resource, id },
+    });
   }
 }
 
@@ -67,13 +84,19 @@ export async function assertApartmentOwnership(
     .limit(1);
 
   if (!apartment) {
-    throw new NotFoundException(`Apartment with ID ${apartmentId} not found`);
+    throw new NotFoundException({
+      code: "APARTMENT_NOT_FOUND",
+      message: "Apartment does not exist.",
+      meta: { origin: "DOMAIN", apartmentId },
+    });
   }
 
   if (apartment.owner !== userId) {
-    throw new ForbiddenException(
-      "You do not have permission to modify or create resources for this apartment",
-    );
+    throw new ForbiddenException({
+      code: "FORBIDDEN_APARTMENT_ACCESS",
+      message: "You do not have access to this apartment.",
+      meta: { origin: "DOMAIN", apartmentId },
+    });
   }
 }
 
@@ -93,6 +116,10 @@ const isRealDate = (dateStr?: string | Date | null): boolean => {
   return !isNaN(time) && time > 0;
 };
 
+/**
+ * Asserts the requested range does not overlap an existing reservation.
+ * Order: range validity → overlap. The first violation wins.
+ */
 export async function assertNoOverlappingReservation(
   db: any,
   params: OverlapCheckParams,
@@ -116,9 +143,17 @@ export async function assertNoOverlappingReservation(
     : new Date(checkOutDatetime);
 
   if (newStart >= newEnd) {
-    throw new ConflictException(
-      "Check-out date must be strictly after check-in date.",
-    );
+    throw new BadRequestException({
+      code: "RESERVATION_INVALID_RANGE",
+      message: "Check-out must be strictly after check-in.",
+      details: [
+        {
+          field: "body.checkOutDatetime",
+          message: "Check-out must be strictly after check-in.",
+        },
+      ],
+      meta: { origin: "DOMAIN" },
+    });
   }
 
   const isoStart = newStart.toISOString();
@@ -156,12 +191,21 @@ export async function assertNoOverlappingReservation(
     .limit(1);
 
   if (overlapping) {
-    throw new ConflictException(
-      "The apartment is already booked for the selected date range.",
-    );
+    throw new ConflictException({
+      code: "RESERVATION_OVERLAP",
+      message:
+        "This apartment already has a reservation overlapping the requested dates. " +
+        "Choose dates outside that range or cancel the existing reservation.",
+      meta: { origin: "DOMAIN", apartmentId, conflictingReservationId: overlapping.id },
+    });
   }
 }
 
+/**
+ * Asserts an inspection may be created for a reservation.
+ * Order: existence → uniqueness → state → photo proof → time window.
+ * The first violation wins, so identical input always yields the same error.
+ */
 export async function assertCanCreateInspection(
   db: any,
   reservationId: string,
@@ -182,28 +226,39 @@ export async function assertCanCreateInspection(
 
   // 1. Existence check
   if (!record) {
-    throw new NotFoundException(`Reservation with ID ${reservationId}`);
+    throw new NotFoundException({
+      code: "RESERVATION_NOT_FOUND",
+      message: "Reservation does not exist.",
+      meta: { origin: "DOMAIN", id: reservationId },
+    });
   }
 
   // 2. Prevent duplicate inspection
   if (record.existingInspectionId) {
-    throw new ConflictException(
-      `An inspection already exists for reservation ${reservationId}.`,
-    );
+    throw new ConflictException({
+      code: "INSPECTION_ALREADY_EXISTS",
+      message: "An inspection already exists for this reservation.",
+      meta: { origin: "DOMAIN", inspectionId: record.existingInspectionId },
+    });
   }
 
   // 3. Status precondition check
   if (record.status !== "COVERED") {
-    throw new BadRequestException(
-      `Cannot create inspection: reservation status must be 'COVERED' (current: '${record.status}').`,
-    );
+    throw new BadRequestException({
+      code: "RESERVATION_NOT_COVERED",
+      message: `An inspection can only be created once the reservation is covered. This reservation is currently '${record.status}'.`,
+      meta: { origin: "DOMAIN", status: record.status },
+    });
   }
 
   // 4. Photo proof requirement check
   if (!record.hasPhotoProof) {
-    throw new BadRequestException(
-      "Cannot create inspection: reservation does not have photo proof satisfied.",
-    );
+    throw new BadRequestException({
+      code: "INSPECTION_NO_PHOTO_PROOF",
+      message:
+        "An inspection can only be created once the reservation's photo proof is satisfied.",
+      meta: { origin: "DOMAIN", id: reservationId },
+    });
   }
 
   // 5. Time window check (Up to 1 hour past effective check-in time)
@@ -218,9 +273,11 @@ export async function assertCanCreateInspection(
   const now = new Date();
 
   if (now > deadline) {
-    throw new BadRequestException(
-      `Cannot create inspection: window expired. Inspections can only be created up to 1 hour after check-in (${effectiveCheckIn.toISOString()}).`,
-    );
+    throw new BadRequestException({
+      code: "INSPECTION_WINDOW_EXPIRED",
+      message: `The inspection window has closed. Inspections can only be created up to 1 hour after check-in (${effectiveCheckIn.toISOString()}).`,
+      meta: { origin: "DOMAIN", deadline: deadline.toISOString() },
+    });
   }
 }
 
@@ -230,6 +287,11 @@ interface FlagCreationParams {
   maxHoursWindow?: number; // Defaults to 12 hours if not specified
 }
 
+/**
+ * Asserts a flag may be created for an inspection shot.
+ * Order: existence → uniqueness → time window.
+ * The first violation wins, so identical input always yields the same error.
+ */
 export async function assertCanCreateFlag(
   db: any,
   params: FlagCreationParams,
@@ -256,13 +318,19 @@ export async function assertCanCreateFlag(
     .limit(1);
 
   if (!record) {
-    throw new NotFoundException(`Inspection with ID ${inspectionId}`);
+    throw new NotFoundException({
+      code: "INSPECTION_NOT_FOUND",
+      message: "Inspection does not exist.",
+      meta: { origin: "DOMAIN", id: inspectionId },
+    });
   }
 
   if (record.existingFlagId) {
-    throw new ConflictException(
-      `A flag has already been submitted for shot ${shotId} under inspection ${inspectionId}.`,
-    );
+    throw new ConflictException({
+      code: "FLAG_ALREADY_EXISTS",
+      message: "A flag has already been submitted for this shot.",
+      meta: { origin: "DOMAIN", shotId },
+    });
   }
 
   const effectiveCheckIn =
@@ -276,9 +344,11 @@ export async function assertCanCreateFlag(
   const now = new Date();
 
   if (now > deadline) {
-    throw new BadRequestException(
-      `Cannot submit flag: time window expired. Flags can only be created up to ${maxHoursWindow} hours after check-in (${effectiveCheckIn.toISOString()}).`,
-    );
+    throw new BadRequestException({
+      code: "FLAG_WINDOW_EXPIRED",
+      message: `The flag submission window has closed. Flags can only be submitted up to ${maxHoursWindow} hours after check-in.`,
+      meta: { origin: "DOMAIN", deadline: deadline.toISOString() },
+    });
   }
 }
 
@@ -327,9 +397,14 @@ export async function assertCanModifyAsset(
     .limit(1);
 
   if (lockedRecord) {
-    throw new ConflictException(
-      `Cannot ${action} asset '${assetId}': it is linked to a shot with locked photo proof for an upcoming or active reservation (Reservation Status: ${lockedRecord.status}).`,
-    );
+    throw new ConflictException({
+      code: "ASSET_LOCKED",
+      message:
+        `This asset cannot be ${action === "delete" ? "deleted" : "changed"} because it is part of ` +
+        "a shot for a reservation that is currently covered. Wait until that reservation is closed, " +
+        "or remove the asset from the shot first.",
+      meta: { origin: "DOMAIN", assetId, reservationId: lockedRecord.reservationId, status: lockedRecord.status },
+    });
   }
 }
 
@@ -363,8 +438,12 @@ export async function assertCanModifyApartmentShots(
     .limit(1);
 
   if (lockedRecord) {
-    throw new ConflictException(
-      `Cannot sync or modify shots for apartment '${apartmentId}': there is an upcoming reservation with locked photo proof (Reservation Status: ${lockedRecord.status}).`,
-    );
+    throw new ConflictException({
+      code: "APARTMENT_SHOTS_LOCKED",
+      message:
+        "These shots cannot be changed because this apartment has an upcoming or active reservation " +
+        "with locked photo proof. Wait until that reservation is closed.",
+      meta: { origin: "DOMAIN", apartmentId, status: lockedRecord.status },
+    });
   }
 }

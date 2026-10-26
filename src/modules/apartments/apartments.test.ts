@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTestApp } from "@/core/utils/test-factory";
 import apartmentsApp from "./apartments.route";
-import { NotFoundException } from "@/core/errors/error.exceptions";
+import { apartmentErrors } from "./apartments.errors";
 import { S3Client } from "@aws-sdk/client-s3";
 import { usersService } from "../users/users.service";
 
@@ -166,6 +166,11 @@ describe("Apartments routes", () => {
     });
 
     expect(res.status).toBe(404);
+
+    const body: any = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe("APARTMENT_NOT_FOUND");
+    expect(body.error.message).toBe("Apartment does not exist.");
   });
 
   it("POST /apartments should create a new apartment", async () => {
@@ -198,10 +203,28 @@ describe("Apartments routes", () => {
     expect(mockCheckExistence).toHaveBeenCalledTimes(2);
   });
 
+  it("POST /apartments should return VALIDATION_ERROR with body-qualified details", async () => {
+    const res = await testApp.request("/apartments", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: MOCK_JWT,
+      },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(400);
+    const body: any = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe("VALIDATION_ERROR");
+    expect(body.error.details.length).toBeGreaterThan(0);
+    expect(body.error.details[0].field).toMatch(/^body\./);
+    // The existence assertions must not run for a body that never validated.
+    expect(mockCheckExistence).not.toHaveBeenCalled();
+  });
+
   it("POST /apartments should return 404 if the owner or location does not exist", async () => {
-    mockCheckExistence.mockRejectedValueOnce(
-      new NotFoundException(`users with ID ${INVALID_UUID}`),
-    );
+    mockCheckExistence.mockRejectedValueOnce(apartmentErrors.userNotFound({ id: INVALID_UUID }));
 
     const input = {
       owner: INVALID_UUID,
@@ -221,6 +244,11 @@ describe("Apartments routes", () => {
     });
 
     expect(res.status).toBe(404);
+
+    const body: any = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe("USER_NOT_FOUND");
+    expect(body.error.message).toBe("User does not exist.");
   });
 
   it("POST /apartments/:id/photos/upload-tokens should generate presigned URLs", async () => {
@@ -345,6 +373,13 @@ describe("Apartments routes", () => {
     });
 
     expect(res.status).toBe(401);
+
+    const body: any = await res.json();
+    expect(body.success).toBe(false);
+    // A token is present but Supabase rejects it, so the guard reports an expired session
+    // rather than a missing token (see authGuard.ts).
+    expect(body.error.code).toBe("AUTH_SESSION_EXPIRED");
+
     expect(mockGetByOwnerId).not.toHaveBeenCalled();
   });
 });

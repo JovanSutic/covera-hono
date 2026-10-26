@@ -1,4 +1,4 @@
-import { OpenAPIHono } from "@hono/zod-openapi";
+import { createModuleApp } from "@/core/utils/module-app";
 import {
   getUsersRoute,
   getUserByIdRoute,
@@ -8,14 +8,10 @@ import {
 } from "./users.contract";
 
 import { usersService } from "./users.service";
-import { App } from "@/types";
-import {
-  NotFoundException,
-  UnauthorizedException,
-  BadRequestException,
-} from "@/core/errors/error.exceptions";
+import { userErrors } from "./users.errors";
+import { NotFoundException } from "@/core/errors/error.exceptions";
 
-const app = new OpenAPIHono<App>();
+const app = createModuleApp();
 
 app.openapi(getUsersRoute, async (c) => {
   const db = c.get("db");
@@ -33,7 +29,7 @@ app.openapi(getUserByIdRoute, async (c) => {
   const user = await usersService.getById(db, id);
 
   if (!user) {
-    throw new NotFoundException("User");
+    throw userErrors.notFound({ id });
   }
 
   return c.json(user, 200);
@@ -58,7 +54,7 @@ app.openapi(inviteUserRoute, async (c) => {
     const inviteResult = await usersService.invite(db, supabase, id);
 
     if (!inviteResult) {
-      throw new NotFoundException("User");
+      throw userErrors.notFound({ id });
     }
 
     return c.json(
@@ -71,10 +67,7 @@ app.openapi(inviteUserRoute, async (c) => {
   } catch (error: any) {
     if (error instanceof NotFoundException) throw error;
 
-    throw new BadRequestException(
-      error.message || "Invitation execution error",
-      "INVITATION_ERROR",
-    );
+    throw userErrors.invitation({ driver: error.message });
   }
 });
 
@@ -85,7 +78,7 @@ app.openapi(updatePasswordRoute, async (c) => {
   const { password } = c.req.valid("json");
 
   if (!authUser.id) {
-    throw new UnauthorizedException();
+    throw userErrors.unauthenticated();
   }
 
   const { error: authError } = await supabase.auth.admin.updateUserById(
@@ -94,7 +87,7 @@ app.openapi(updatePasswordRoute, async (c) => {
   );
 
   if (authError) {
-    throw new BadRequestException(authError.message, "AUTH_PROVIDER_ERROR");
+    throw userErrors.authProvider({ driver: authError.message });
   }
 
   await usersService.updateStatusByAuthId(db, authUser.id, "confirmed");
