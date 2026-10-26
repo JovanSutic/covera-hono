@@ -9,6 +9,7 @@ import {
   timestamp,
   index,
 } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 import { apartments } from "./apartments";
 import { assetTypes } from "./asset-types";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
@@ -67,6 +68,13 @@ export const assets = pgTable(
     index("idx_asset_type").on(table.assetTypeId),
   ],
 );
+
+export const assetsRelations = relations(assets, ({ one }) => ({
+  assetType: one(assetTypes, {
+    fields: [assets.assetTypeId],
+    references: [assetTypes.id],
+  }),
+}));
 
 export type Asset = typeof assets.$inferSelect;
 export type NewAsset = typeof assets.$inferInsert;
