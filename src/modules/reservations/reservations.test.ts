@@ -3,10 +3,12 @@ import { createTestApp } from "@/core/utils/test-factory";
 import reservationsApp from "./reservations.route";
 import { usersService } from "../users/users.service";
 import { apartmentErrors } from "../apartments/apartments.errors";
+import { ForbiddenException } from "@/core/errors/error.exceptions";
 
 const {
   mockGetByApartmentId,
   mockGetById,
+  mockGetByIdWithInspection,
   mockCreate,
   mockUpdate,
   mockDelete,
@@ -18,6 +20,7 @@ const {
   return {
     mockGetByApartmentId: vi.fn(),
     mockGetById: vi.fn(),
+    mockGetByIdWithInspection: vi.fn(),
     mockCreate: vi.fn(),
     mockUpdate: vi.fn(),
     mockDelete: vi.fn(),
@@ -32,6 +35,7 @@ vi.mock("./reservations.service", () => ({
   reservationsService: {
     getByApartmentId: mockGetByApartmentId,
     getById: mockGetById,
+    getByIdWithInspection: mockGetByIdWithInspection,
     create: mockCreate,
     update: mockUpdate,
     delete: mockDelete,
@@ -470,6 +474,91 @@ describe("Reservations routes", () => {
       expect(body.success).toBe(false);
       expect(body.error.code).toBe("RESERVATION_NOT_FOUND");
       expect(body.error.message).toBe("Reservation does not exist.");
+    });
+  });
+
+  describe("GET /reservations/:id", () => {
+    it("should return the reservation with its inspection for the owner", async () => {
+      mockGetById.mockResolvedValue({
+        id: VALID_RESERVATION_ID,
+        apartmentId: VALID_APARTMENT_ID,
+      });
+
+      const mockReservation = {
+        id: VALID_RESERVATION_ID,
+        apartmentId: VALID_APARTMENT_ID,
+        guestName: "John Doe",
+        guestEmail: "john@example.com",
+        checkInDatetime: "2026-09-01T14:00:00.000Z",
+        checkOutDatetime: "2026-09-05T10:00:00.000Z",
+        status: "PENDING_PROOF",
+        inspection: null,
+        createdAt: "2026-08-01T00:00:00.000Z",
+        updatedAt: "2026-08-01T00:00:00.000Z",
+      };
+
+      mockGetByIdWithInspection.mockResolvedValue(mockReservation);
+
+      const res = await testApp.request(
+        `/reservations/${VALID_RESERVATION_ID}`,
+        { headers: { Authorization: MOCK_JWT } },
+      );
+
+      expect(res.status).toBe(200);
+      const body: any = await res.json();
+      expect(body.guestName).toBe("John Doe");
+      expect(body.inspection).toBeNull();
+
+      expect(mockGetByIdWithInspection).toHaveBeenCalledWith(
+        expect.any(Object),
+        VALID_RESERVATION_ID,
+      );
+    });
+
+    it("should 404 for a reservation that does not exist", async () => {
+      mockGetById.mockResolvedValue(null);
+
+      const res = await testApp.request(
+        `/reservations/${VALID_RESERVATION_ID}`,
+        { headers: { Authorization: MOCK_JWT } },
+      );
+
+      expect(res.status).toBe(404);
+
+      const body: any = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("RESERVATION_NOT_FOUND");
+
+      // The lookup must short-circuit: no ownership check and no second read.
+      expect(mockAssertApartmentOwnership).not.toHaveBeenCalled();
+      expect(mockGetByIdWithInspection).not.toHaveBeenCalled();
+    });
+
+    it("should 403 when the reservation belongs to another host", async () => {
+      mockGetById.mockResolvedValue({
+        id: VALID_RESERVATION_ID,
+        apartmentId: VALID_APARTMENT_ID,
+      });
+      mockAssertApartmentOwnership.mockRejectedValueOnce(
+        new ForbiddenException({
+          code: "FORBIDDEN_APARTMENT_ACCESS",
+          message: "You do not have access to this apartment.",
+          meta: { origin: "DOMAIN", apartmentId: VALID_APARTMENT_ID },
+        }),
+      );
+
+      const res = await testApp.request(
+        `/reservations/${VALID_RESERVATION_ID}`,
+        { headers: { Authorization: MOCK_JWT } },
+      );
+
+      expect(res.status).toBe(403);
+
+      const body: any = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("FORBIDDEN_APARTMENT_ACCESS");
+
+      expect(mockGetByIdWithInspection).not.toHaveBeenCalled();
     });
   });
 });

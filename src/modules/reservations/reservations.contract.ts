@@ -7,6 +7,7 @@ import {
   ReservationParamSchema,
   ReservationQuerySchema,
   ReservationSchema,
+  ReservationWithInspectionSchema,
   UpdateReservationSchema,
 } from "./reservations.schema";
 import { authGuard } from "@/middleware/authGuard";
@@ -44,6 +45,14 @@ const deleteReservationErrors = errorResponses([
   ...VALIDATION,
   "RESERVATION_NOT_FOUND",
 ]);
+const getReservationByIdErrors = errorResponses([
+  ...AUTHED,
+  ...ROLE,
+  ...VALIDATION,
+  "RESERVATION_NOT_FOUND",
+  "APARTMENT_NOT_FOUND",
+  "FORBIDDEN_APARTMENT_ACCESS",
+]);
 
 export const getReservationsByApartmentRoute = createRoute({
   method: "get",
@@ -68,6 +77,27 @@ export const getReservationsByApartmentRoute = createRoute({
       },
     },
     ...getReservationsByApartmentErrors,
+  },
+});
+
+export const getReservationByIdRoute = createRoute({
+  method: "get",
+  path: "/{id}",
+  tags: ["Reservations"],
+  middleware: [authGuard, rolesGuard(["admin", "host"])] as const,
+  request: {
+    params: ReservationParamSchema,
+  },
+  responses: {
+    200: {
+      description: "A single reservation with its inspection",
+      content: {
+        "application/json": {
+          schema: ReservationWithInspectionSchema,
+        },
+      },
+    },
+    ...getReservationByIdErrors,
   },
 });
 
