@@ -4,6 +4,7 @@ import { Variables } from "@/types";
 import type {
   ReservationQuery,
   PaginatedReservations,
+  ReservationWithInspection,
 } from "./reservations.schema"; // adjust path as needed
 
 const SORTABLE_COLUMNS = {
@@ -68,6 +69,25 @@ export const reservationsService = {
       .select()
       .from(reservations)
       .where(eq(reservations.id, id));
+
+    return reservation || null;
+  },
+
+  /**
+   * One reservation with its inspection attached — the shape the reservation page
+   * reads (D4). `getById` above deliberately stays relation-free: `apartmentGuard`
+   * calls it for ownership resolution and needs only the row.
+   */
+  async getByIdWithInspection(
+    db: Variables["db"],
+    id: string,
+  ): Promise<ReservationWithInspection | null> {
+    const reservation = await db.query.reservations.findFirst({
+      where: eq(reservations.id, id),
+      with: {
+        inspection: true,
+      },
+    });
 
     return reservation || null;
   },

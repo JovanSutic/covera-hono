@@ -57,6 +57,9 @@ export const PaginatedReservationsSchema = z
 
 export type ReservationQuery = z.infer<typeof ReservationQuerySchema>;
 export type PaginatedReservations = z.infer<typeof PaginatedReservationsSchema>;
+export type ReservationWithInspection = z.infer<
+  typeof ReservationWithInspectionSchema
+>;
 
 // --- Existing Schemas ---
 
