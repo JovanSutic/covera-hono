@@ -2,6 +2,7 @@ import { createModuleApp } from "@/core/utils/module-app";
 import {
   getReservationsByApartmentRoute,
   getReservationByIdRoute,
+  getReservationPhotosRoute,
   createReservationRoute,
   updateReservationRoute,
   deleteReservationRoute,
@@ -32,12 +33,18 @@ app.openapi(getReservationsByApartmentRoute, async (c) => {
   return c.json(paginatedReservations, 200);
 });
 
-// Keep the list route ahead of this one: "/apartment/{apartmentId}" and "/{id}" do not
-// conflict (the list has a static first segment), but declaring the static path first
-// keeps the reading order matching the contract's order.
-app.openapi(getReservationByIdRoute, async (c) => {
+/**
+ * Resolves one reservation and asserts the caller may read it — the shared front half
+ * of both reservation-scoped reads. Extracted rather than duplicated because the two
+ * routes must fail identically: a divergence here would make the photo read answer 403
+ * where the detail route answers 404, and the client cannot tell those apart.
+ *
+ * D5: ownership is asserted here rather than by apartmentGuard(true), because that
+ * guard resolves an unknown id through the apartments table first and would report
+ * APARTMENT_NOT_FOUND for a reservation that simply does not exist.
+ */
+async function resolveOwnedReservation(c: any, id: string) {
   const db = c.get("db");
-  const { id } = c.req.valid("param");
   const user = c.get("user");
 
   if (!user) {
@@ -50,14 +57,22 @@ app.openapi(getReservationByIdRoute, async (c) => {
     throw reservationErrors.notFound({ id });
   }
 
-  // D5: ownership is asserted here rather than by apartmentGuard(true), because that
-  // guard resolves an unknown id through the apartments table first and would report
-  // APARTMENT_NOT_FOUND for a reservation that simply does not exist.
   await assertApartmentOwnership(db, reservation.apartmentId, {
     userId: user.id,
     role: user.role,
     allowAdmin: true,
   });
+
+  return db;
+}
+
+// Keep the list route ahead of this one: "/apartment/{apartmentId}" and "/{id}" do not
+// conflict (the list has a static first segment), but declaring the static path first
+// keeps the reading order matching the contract's order.
+app.openapi(getReservationByIdRoute, async (c) => {
+  const { id } = c.req.valid("param");
+
+  const db = await resolveOwnedReservation(c, id);
 
   const withInspection = await reservationsService.getByIdWithInspection(db, id);
 
@@ -66,6 +81,16 @@ app.openapi(getReservationByIdRoute, async (c) => {
   }
 
   return c.json(withInspection, 200);
+});
+
+app.openapi(getReservationPhotosRoute, async (c) => {
+  const { id } = c.req.valid("param");
+
+  const db = await resolveOwnedReservation(c, id);
+
+  const photos = await reservationsService.getProofPhotos(db, id);
+
+  return c.json(photos, 200);
 });
 
 app.openapi(createReservationRoute, async (c) => {

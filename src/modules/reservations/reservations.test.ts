@@ -9,6 +9,7 @@ const {
   mockGetByApartmentId,
   mockGetById,
   mockGetByIdWithInspection,
+  mockGetProofPhotos,
   mockCreate,
   mockUpdate,
   mockDelete,
@@ -21,6 +22,7 @@ const {
     mockGetByApartmentId: vi.fn(),
     mockGetById: vi.fn(),
     mockGetByIdWithInspection: vi.fn(),
+    mockGetProofPhotos: vi.fn(),
     mockCreate: vi.fn(),
     mockUpdate: vi.fn(),
     mockDelete: vi.fn(),
@@ -36,6 +38,7 @@ vi.mock("./reservations.service", () => ({
     getByApartmentId: mockGetByApartmentId,
     getById: mockGetById,
     getByIdWithInspection: mockGetByIdWithInspection,
+    getProofPhotos: mockGetProofPhotos,
     create: mockCreate,
     update: mockUpdate,
     delete: mockDelete,
@@ -559,6 +562,127 @@ describe("Reservations routes", () => {
       expect(body.error.code).toBe("FORBIDDEN_APARTMENT_ACCESS");
 
       expect(mockGetByIdWithInspection).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("GET /reservations/:id/photos", () => {
+    /** A shot carrying one active image — the shape the dialog renders. */
+    const photoShots = () => [
+      {
+        id: "220e8400-e29b-41d4-a716-446655440000",
+        apartmentId: VALID_APARTMENT_ID,
+        roomLocation: "ENTRANCE_HALLWAY",
+        shotType: "CLOSEUP",
+        title: "Front door",
+        instructions: "Photograph the lock",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        assets: [],
+        images: [
+          {
+            id: "330e8400-e29b-41d4-a716-446655440000",
+            apartmentId: VALID_APARTMENT_ID,
+            shotId: "220e8400-e29b-41d4-a716-446655440000",
+            reservationId: VALID_RESERVATION_ID,
+            type: "checkin_state",
+            storageKey: "reservations/1/front-door.jpg",
+            uploadedAt: "2026-01-02T10:00:00.000Z",
+            status: "active",
+            deletedAt: null,
+          },
+        ],
+      },
+    ];
+
+    it("should return the submitted photos for the reservation's owner", async () => {
+      mockGetById.mockResolvedValue({
+        id: VALID_RESERVATION_ID,
+        apartmentId: VALID_APARTMENT_ID,
+      });
+      mockGetProofPhotos.mockResolvedValue(photoShots());
+
+      const res = await testApp.request(
+        `/reservations/${VALID_RESERVATION_ID}/photos`,
+        { headers: { Authorization: MOCK_JWT } },
+      );
+
+      expect(res.status).toBe(200);
+
+      const body: any = await res.json();
+      expect(Array.isArray(body)).toBe(true);
+      expect(body).toHaveLength(1);
+      // The storage key is what the dialog turns into an image URL — if the route's
+      // schema dropped it, the response would be a list of empty cards.
+      expect(body[0].images[0].storageKey).toBe(
+        "reservations/1/front-door.jpg",
+      );
+
+      expect(mockGetProofPhotos).toHaveBeenCalledWith(
+        expect.any(Object),
+        VALID_RESERVATION_ID,
+      );
+      // Resolved once, by the shared front half — not re-read for the photos.
+      expect(mockGetById).toHaveBeenCalledTimes(1);
+    });
+
+    it("should return an empty list for a reservation with no photos", async () => {
+      mockGetById.mockResolvedValue({
+        id: VALID_RESERVATION_ID,
+        apartmentId: VALID_APARTMENT_ID,
+      });
+      mockGetProofPhotos.mockResolvedValue([]);
+
+      const res = await testApp.request(
+        `/reservations/${VALID_RESERVATION_ID}/photos`,
+        { headers: { Authorization: MOCK_JWT } },
+      );
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual([]);
+    });
+
+    it("should 404 for a reservation that does not exist", async () => {
+      mockGetById.mockResolvedValue(null);
+
+      const res = await testApp.request(
+        `/reservations/${VALID_RESERVATION_ID}/photos`,
+        { headers: { Authorization: MOCK_JWT } },
+      );
+
+      expect(res.status).toBe(404);
+
+      const body: any = await res.json();
+      expect(body.error.code).toBe("RESERVATION_NOT_FOUND");
+
+      // Same short-circuit as the detail route: no ownership check, no photo read.
+      expect(mockAssertApartmentOwnership).not.toHaveBeenCalled();
+      expect(mockGetProofPhotos).not.toHaveBeenCalled();
+    });
+
+    it("should 403 when the reservation belongs to another host", async () => {
+      mockGetById.mockResolvedValue({
+        id: VALID_RESERVATION_ID,
+        apartmentId: VALID_APARTMENT_ID,
+      });
+      mockAssertApartmentOwnership.mockRejectedValueOnce(
+        new ForbiddenException({
+          code: "FORBIDDEN_APARTMENT_ACCESS",
+          message: "You do not have access to this apartment.",
+          meta: { origin: "DOMAIN", apartmentId: VALID_APARTMENT_ID },
+        }),
+      );
+
+      const res = await testApp.request(
+        `/reservations/${VALID_RESERVATION_ID}/photos`,
+        { headers: { Authorization: MOCK_JWT } },
+      );
+
+      expect(res.status).toBe(403);
+
+      const body: any = await res.json();
+      expect(body.error.code).toBe("FORBIDDEN_APARTMENT_ACCESS");
+
+      expect(mockGetProofPhotos).not.toHaveBeenCalled();
     });
   });
 });
