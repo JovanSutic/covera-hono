@@ -24,9 +24,9 @@ export const apartmentErrors = defineErrors(
     maxPhotos: {
       status: 400 as const,
       code: "MAX_PHOTOS_EXCEEDED" as const,
-      description: "The apartment photo limit would be exceeded.",
+      description: "The per-reservation photo limit would be exceeded.",
       message: (ctx: { limit: number; count: number }) =>
-        `This apartment already has ${ctx.count} photos and the limit is ${ctx.limit}. ` +
+        `This reservation already has ${ctx.count} photos and the limit is ${ctx.limit}. ` +
         "Remove some photos before adding more.",
     },
   },

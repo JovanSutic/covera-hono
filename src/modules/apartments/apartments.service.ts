@@ -1,4 +1,4 @@
-import { eq, and, count, inArray, notInArray } from "drizzle-orm";
+import { eq, and, inArray, notInArray } from "drizzle-orm";
 
 import {
   apartments,
@@ -16,7 +16,16 @@ import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { ConfirmUploadBody } from "./apartments.schema";
 
-export const MAX_PHOTOS_PER_APARTMENT = 20;
+/**
+ * The photo cap, and it is PER RESERVATION — not per apartment, despite what this
+ * module's name suggests.
+ *
+ * `apartment_images` is keyed by `reservationId`; a row's apartment is only the
+ * apartment the reservation happened in. An apartment accumulates one active set per
+ * reservation it has ever had, so its active count grows without bound while any
+ * single reservation's stays at or under this number.
+ */
+export const MAX_PHOTOS_PER_RESERVATION = 20;
 
 export const apartmentsService = {
   async getAll(db: Variables["db"]) {
@@ -72,31 +81,33 @@ export const apartmentsService = {
   },
 
   async generateUploadTokens(
-    db: Variables["db"],
     s3: Variables["s3"],
     bucketName: Bindings["R2_BUCKET_NAME"],
     apartmentId: string,
     fileTypes: string[],
   ): Promise<{ uploadUrl: string; key: string }[]> {
-    const [existingCount] = await db
-      .select({ val: count() })
-      .from(apartmentImages)
-      .where(
-        and(
-          eq(apartmentImages.apartmentId, apartmentId),
-          eq(apartmentImages.status, "active"),
-        ),
-      );
-
-    const activeCount = existingCount?.val || 0;
-
-    if (activeCount + fileTypes.length > MAX_PHOTOS_PER_APARTMENT) {
+    // The cap here is on ONE BATCH of token requests, not on the apartment.
+    //
+    // It used to count every active photo on the apartment and refuse past 20, which
+    // made this route permanently unreachable for any apartment with 20+ photos —
+    // including photos belonging to reservations that closed long ago. That count is
+    // the wrong quantity twice over: it is apartment-scoped where the limit is
+    // reservation-scoped, and this route is not given a `reservationId`, so it has no
+    // way to compute the right one. Minting a presigned URL writes nothing, so the
+    // batch size is all that needs bounding here; the per-reservation limit is
+    // enforced by `syncUploadedPhotos`, which is keyed by reservation and is the
+    // call that actually INSERTs.
+    if (fileTypes.length > MAX_PHOTOS_PER_RESERVATION) {
       throw new BadRequestException({
         code: "MAX_PHOTOS_EXCEEDED",
         message:
-          `This apartment already has ${activeCount} photos and the limit is ${MAX_PHOTOS_PER_APARTMENT}. ` +
-          "Remove some photos before adding more.",
-        meta: { origin: "DOMAIN", limit: MAX_PHOTOS_PER_APARTMENT, activeCount },
+          `You can request at most ${MAX_PHOTOS_PER_RESERVATION} upload tokens at once, ` +
+          `but ${fileTypes.length} were requested.`,
+        meta: {
+          origin: "DOMAIN",
+          limit: MAX_PHOTOS_PER_RESERVATION,
+          requested: fileTypes.length,
+        },
       });
     }
 
@@ -119,6 +130,15 @@ export const apartmentsService = {
     );
   },
 
+  /**
+   * Records the confirmed uploads for ONE reservation. Every write below is scoped by
+   * `reservationId`, so the 20-photo bound is a reservation's, which is exactly the
+   * quantity this call has: the batch replaces this reservation's photos for the shots
+   * it targets. Photos already stored for this reservation's OTHER shots are not in
+   * `photos` and are not touched, so this compares a batch against the limit rather
+   * than a running total — the apartment's total across all its reservations is
+   * deliberately unbounded.
+   */
   async syncUploadedPhotos(
     db: Variables["db"],
     apartmentId: string,
@@ -126,13 +146,18 @@ export const apartmentsService = {
   ): Promise<{ success: boolean; activeCount: number }> {
     const { reservationId, type, photos } = payload;
 
-    if (photos.length > MAX_PHOTOS_PER_APARTMENT) {
+    if (photos.length > MAX_PHOTOS_PER_RESERVATION) {
       throw new BadRequestException({
         code: "MAX_PHOTOS_EXCEEDED",
         message:
-          `You are confirming ${photos.length} photos but the limit is ${MAX_PHOTOS_PER_APARTMENT}. ` +
+          `You are confirming ${photos.length} photos but the limit is ${MAX_PHOTOS_PER_RESERVATION} per reservation. ` +
           "Remove some photos and try again.",
-        meta: { origin: "DOMAIN", limit: MAX_PHOTOS_PER_APARTMENT, submitted: photos.length },
+        meta: {
+          origin: "DOMAIN",
+          limit: MAX_PHOTOS_PER_RESERVATION,
+          submitted: photos.length,
+          reservationId,
+        },
       });
     }
 
