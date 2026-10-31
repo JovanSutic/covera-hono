@@ -5,6 +5,7 @@ import {
   DeleteReservationResponseSchema,
   PaginatedReservationsSchema,
   ReservationParamSchema,
+  ReservationPhotosSchema,
   ReservationQuerySchema,
   ReservationSchema,
   ReservationWithInspectionSchema,
@@ -53,6 +54,32 @@ const getReservationByIdErrors = errorResponses([
   "APARTMENT_NOT_FOUND",
   "FORBIDDEN_APARTMENT_ACCESS",
 ]);
+
+/**
+ * The photo read resolves the reservation, then asserts ownership against the
+ * apartment it belongs to — so it declares exactly the same codes as the detail
+ * route it sits beside, for the same reasons (`D5` in `reservations.route.ts`).
+ */
+export const getReservationPhotosRoute = createRoute({
+  method: "get",
+  path: "/{id}/photos",
+  tags: ["Reservations"],
+  middleware: [authGuard, rolesGuard(["admin", "host"])] as const,
+  request: {
+    params: ReservationParamSchema,
+  },
+  responses: {
+    200: {
+      description: "The photo proofs submitted for this reservation",
+      content: {
+        "application/json": {
+          schema: ReservationPhotosSchema,
+        },
+      },
+    },
+    ...getReservationByIdErrors,
+  },
+});
 
 export const getReservationsByApartmentRoute = createRoute({
   method: "get",

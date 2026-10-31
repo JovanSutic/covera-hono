@@ -11,15 +11,7 @@ import {
 import { Variables } from "@/types";
 import type { DetailedInspection, VisitLogEvent } from "./inspections.schema";
 import { CreateInspectionFlag, InspectionFlag } from "./inspectionFlags.schema";
-
-/**
- * The relational query loads the catalogue row as `assetType`; the API contract names it
- * `asset_type`. Same rename `assetsService` performs for the host payload.
- */
-const toAssetWithType = (asset: any) => {
-  const { assetType, ...rest } = asset;
-  return { ...rest, asset_type: assetType };
-};
+import { buildProofShots, toAssetWithType } from "@/core/utils/proof-shots";
 
 export const inspectionsService = {
   async getByReservationId(
@@ -117,16 +109,10 @@ export const inspectionsService = {
     } = result.reservation;
 
     // Format shots with their mapped images & flattened assets
-    const shots = (apartment?.shots || []).map((shot) => {
-      const { shotAssets = [], ...shotData } = shot;
-      return {
-        ...shotData,
-        images: (reservationImages || []).filter(
-          (img) => img.shotId === shot.id,
-        ),
-        assets: shotAssets.map((pivot) => toAssetWithType(pivot.asset)),
-      };
-    });
+    const shots = buildProofShots(
+      apartment?.shots || [],
+      reservationImages || [],
+    );
 
     const formattedApartment = apartment
       ? {

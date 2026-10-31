@@ -1,9 +1,22 @@
 import { z } from "@hono/zod-openapi";
 import { SelectReservationSchema, InsertReservationSchema } from "@/db";
-import { InspectionSchema } from "../inspections/inspections.schema";
+import {
+  InspectionSchema,
+  ShotWithAssetsSchema,
+} from "../inspections/inspections.schema";
 
 // 1. Base Reservation Schema
 export const ReservationSchema = SelectReservationSchema.openapi("Reservation");
+
+/**
+ * The reservation's photo proofs, in the inspection tree's own shot shape — the
+ * host's photo dialog renders whichever of the two it was handed, so this must stay
+ * structurally identical to `DetailedInspection.shots`. Reference, not redefinition:
+ * a second schema for the same payload is how the two drift.
+ */
+export const ReservationPhotosSchema = z
+  .array(ShotWithAssetsSchema)
+  .openapi("ReservationPhotos");
 
 export const ReservationWithInspectionSchema = SelectReservationSchema.extend({
   inspection: InspectionSchema.nullable().optional(),
@@ -55,6 +68,7 @@ export const PaginatedReservationsSchema = z
   })
   .openapi("PaginatedReservations");
 
+export type ReservationPhotos = z.infer<typeof ReservationPhotosSchema>;
 export type ReservationQuery = z.infer<typeof ReservationQuerySchema>;
 export type PaginatedReservations = z.infer<typeof PaginatedReservationsSchema>;
 export type ReservationWithInspection = z.infer<
