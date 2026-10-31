@@ -59,7 +59,6 @@ app.openapi(requestUploadTokensRoute, async (c) => {
   await checkExistence(db, "apartments", id);
 
   const tokens = await apartmentsService.generateUploadTokens(
-    db,
     s3,
     bucketName,
     id,

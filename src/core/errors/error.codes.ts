@@ -23,7 +23,7 @@ export const ERROR_REGISTRY = {
   INSPECTION_NO_PHOTO_PROOF: { status: 400, description: "The reservation has no satisfied photo proof." },
   INSPECTION_WINDOW_EXPIRED: { status: 400, description: "The inspection creation window has expired." },
   FLAG_WINDOW_EXPIRED:       { status: 400, description: "The flag submission window has expired." },
-  MAX_PHOTOS_EXCEEDED:       { status: 400, description: "The apartment photo limit would be exceeded." },
+  MAX_PHOTOS_EXCEEDED:       { status: 400, description: "The per-reservation photo limit would be exceeded." },
   ASSET_TYPE_INVALID:        { status: 400, description: "The referenced asset type does not exist." },
   AUTH_PROVIDER_ERROR:       { status: 400, description: "The authentication provider rejected the request." },
   INVITATION_ERROR:          { status: 400, description: "The invitation could not be dispatched." },
