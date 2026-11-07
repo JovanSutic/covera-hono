@@ -7,6 +7,8 @@ import locationsRoutes from "./modules/locations/locations.route";
 import assetsRoutes from "./modules/assets/assets.route";
 import shotsRoutes from "./modules/apartment_shots/apartment_shots.route";
 import inspectionsRoutes from "./modules/inspections/inspections.route";
+import incidentsRoutes from "./modules/incidents/incidents.route";
+import incidentsFieldRoutes from "./modules/incidents/incidents.field.route";
 import { dbMiddleware } from "./middleware/db";
 import { App } from "./types";
 import { supabaseMiddleware } from "./middleware/supabase";
@@ -56,6 +58,8 @@ app.route("/locations", locationsRoutes);
 app.route("/assets", assetsRoutes);
 app.route("/apartment-shots", shotsRoutes);
 app.route("/inspections", inspectionsRoutes);
+app.route("/incidents", incidentsRoutes);
+app.route("/field/ingest", incidentsFieldRoutes);
 
 app.doc("/openapi.json", {
   openapi: "3.0.0",
