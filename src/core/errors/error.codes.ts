@@ -30,6 +30,9 @@ export const ERROR_REGISTRY = {
   INCIDENT_WINDOW_EXPIRED:   { status: 400, description: "The claim is outside the window in which it can be opened." },
   ASSET_NOT_IN_APARTMENT:    { status: 400, description: "The asset does not belong to the apartment the claim is for." },
   EVIDENCE_TYPE_MISMATCH:    { status: 400, description: "The evidence type is not valid for this item." },
+  EVIDENCE_METADATA_INVALID: { status: 400, description: "The evidence carries metadata its type cannot have." },
+  EVIDENCE_KEY_INVALID:      { status: 400, description: "The evidence storage key was not issued for this item." },
+  MAX_EVIDENCE_EXCEEDED:     { status: 400, description: "The per-item evidence limit would be exceeded." },
 
   // ---- 401 -----------------------------------------------------------------
   AUTH_TOKEN_MISSING:   { status: 401, description: "No authentication token was supplied." },
@@ -51,6 +54,8 @@ export const ERROR_REGISTRY = {
   USER_NOT_FOUND:       { status: 404, description: "User does not exist." },
   FLAG_NOT_FOUND:       { status: 404, description: "Flag does not exist." },
   INCIDENT_NOT_FOUND:   { status: 404, description: "Incident does not exist." },
+  INCIDENT_ITEM_NOT_FOUND: { status: 404, description: "Incident item does not exist." },
+  EVIDENCE_NOT_FOUND:   { status: 404, description: "Evidence does not exist." },
   FIELD_TOKEN_INVALID:  { status: 404, description: "The field link is not valid, has expired, or has already been used." },
 
   // ---- 409 -----------------------------------------------------------------
@@ -64,6 +69,9 @@ export const ERROR_REGISTRY = {
   INCIDENT_ALREADY_EXISTS:  { status: 409, description: "An incident already exists for this reservation." },
   INCIDENT_NOT_READY:       { status: 409, description: "The claim cannot be filed until every item has its photos." },
   INCIDENT_ALREADY_FILED:   { status: 409, description: "The claim has already been filed." },
+  INCIDENT_ITEM_EXISTS:     { status: 409, description: "This asset is already an item on the claim." },
+  INCIDENT_ITEM_LOCKED:     { status: 409, description: "The item already has evidence and can no longer be re-typed." },
+  INCIDENT_NOT_EDITABLE:    { status: 409, description: "The claim has been filed and can no longer be changed." },
 
   // ---- 500 / other ---------------------------------------------------------
   INTERNAL_SERVER_ERROR: { status: 500, description: "An unexpected error occurred." },

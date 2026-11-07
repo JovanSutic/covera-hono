@@ -8,25 +8,41 @@ const {
   mockGetFieldContext,
   mockGetFieldAsset,
   mockGetBaselinePhotos,
+  mockGetFieldEvidenceGuidance,
   mockGenerateUploadTokens,
+  mockCountActiveEvidence,
   mockSubmitFieldEvidence,
 } = vi.hoisted(() => ({
   mockGetFieldContext: vi.fn(),
   mockGetFieldAsset: vi.fn(),
   mockGetBaselinePhotos: vi.fn(),
+  mockGetFieldEvidenceGuidance: vi.fn(),
   mockGenerateUploadTokens: vi.fn(),
+  mockCountActiveEvidence: vi.fn(),
   mockSubmitFieldEvidence: vi.fn(),
 }));
 
-vi.mock("./incidents.service", () => ({
-  incidentsService: {
-    getFieldContext: mockGetFieldContext,
-    getFieldAsset: mockGetFieldAsset,
-    getBaselinePhotos: mockGetBaselinePhotos,
-    generateFieldUploadTokens: mockGenerateUploadTokens,
-    submitFieldEvidence: mockSubmitFieldEvidence,
-  },
-}));
+vi.mock("./incidents.service", async () => {
+  // The pure helpers stay REAL: `requiredPhotoTypes` and `MAX_EVIDENCE_PER_ITEM`
+  // are the rules the routes enforce, so stubbing them would make these tests
+  // assert that the mocks were called rather than that the rule holds.
+  const actual = await vi.importActual<typeof import("./incidents.service")>(
+    "./incidents.service",
+  );
+
+  return {
+    ...actual,
+    incidentsService: {
+      getFieldContext: mockGetFieldContext,
+      getFieldAsset: mockGetFieldAsset,
+      getBaselinePhotos: mockGetBaselinePhotos,
+      getFieldEvidenceGuidance: mockGetFieldEvidenceGuidance,
+      generateFieldUploadTokens: mockGenerateUploadTokens,
+      countActiveEvidence: mockCountActiveEvidence,
+      submitFieldEvidence: mockSubmitFieldEvidence,
+    },
+  };
+});
 
 const TOKEN = "b01924ce7c9f4d37856e5b3701d35909";
 const INCIDENT_ID = "880e8400-e29b-41d4-a716-446655440000";
@@ -70,9 +86,17 @@ describe("Field intake routes", () => {
     mockGetFieldContext.mockResolvedValue(fieldContext());
     mockGetFieldAsset.mockResolvedValue(asset);
     mockGetBaselinePhotos.mockResolvedValue([]);
+    mockGetFieldEvidenceGuidance.mockResolvedValue({
+      requiredEvidenceTypes: [
+        "damage_photo_wide",
+        "damage_photo_closeup",
+      ],
+      attachedEvidenceCounts: {},
+    });
     mockGenerateUploadTokens.mockResolvedValue([
       { uploadUrl: "https://upload.example/presigned", key: "k" },
     ]);
+    mockCountActiveEvidence.mockResolvedValue(0);
     mockSubmitFieldEvidence.mockResolvedValue({
       itemStatus: "photos_collected",
       evidenceCount: 1,
@@ -92,12 +116,63 @@ describe("Field intake routes", () => {
     });
 
     /**
+     * The prep doc's central ask — "the system needs to drive the user what
+     * needs to be provided" — answered where the user is standing. Before this
+     * the cleaner was shown a bare file picker with no indication of which
+     * shots the item expects.
+     */
+    it("tells the cleaner which evidence this item needs and what is already in", async () => {
+      mockGetFieldEvidenceGuidance.mockResolvedValue({
+        requiredEvidenceTypes: ["damage_photo_wide", "damage_photo_closeup"],
+        attachedEvidenceCounts: { damage_photo_wide: 1 },
+      });
+
+      const res = await testApp.request(`/field/ingest/${TOKEN}`);
+
+      const data = await res.json();
+      expect(data.requiredEvidenceTypes).toEqual([
+        "damage_photo_wide",
+        "damage_photo_closeup",
+      ]);
+      expect(data.attachedEvidenceCounts).toEqual({ damage_photo_wide: 1 });
+      expect(mockGetFieldEvidenceGuidance).toHaveBeenCalledWith(
+        expect.any(Object),
+        ITEM_ID,
+        "damage",
+      );
+    });
+
+    /**
+     * V2: the baseline is scoped to the ASSET being photographed, not the whole
+     * apartment. A cleaner photographing a damaged kettle framed against last
+     * stay's living-room shots would be invited to reproduce the wrong
+     * composition.
+     */
+    it("scopes the baseline photos to the asset, not the apartment", async () => {
+      await testApp.request(`/field/ingest/${TOKEN}`);
+
+      expect(mockGetBaselinePhotos).toHaveBeenCalledWith(
+        expect.any(Object),
+        undefined,
+        undefined,
+        "660e8400-e29b-41d4-a716-446655440000",
+        expect.any(Date),
+        asset.id,
+      );
+    });
+
+    /**
      * The feature's headline invariant, asserted against the SERIALISED body
      * rather than the schema. A schema-only assertion would still pass if the
      * handler spread a rich row into the response, which is exactly the mistake
      * a later edit makes.
      */
     it("leaks no guest identity and no money", async () => {
+      mockGetFieldEvidenceGuidance.mockResolvedValue({
+        requiredEvidenceTypes: ["damage_photo_wide", "damage_photo_closeup"],
+        attachedEvidenceCounts: { damage_photo_wide: 1 },
+      });
+
       const res = await testApp.request(`/field/ingest/${TOKEN}`);
       const raw = await res.text();
 
@@ -110,6 +185,11 @@ describe("Field intake routes", () => {
         "amount",
         "owner",
         "authId",
+        // The guidance fields are counts and type names only — a storage key
+        // here would hand an unauthenticated caller the bucket layout.
+        "storageKey",
+        "incidents/",
+        "cleanerToken",
       ]) {
         expect(raw).not.toContain(forbidden);
       }
@@ -196,6 +276,45 @@ describe("Field intake routes", () => {
       );
 
       await expectError(res, 400, "VALIDATION_ERROR");
+    });
+
+    /**
+     * S1: this route is unauthenticated and minting writes nothing, so both the
+     * batch AND the item's existing count are bounded here. Without the second,
+     * the batch bound is bypassed by calling this route once per photo.
+     */
+    it("returns 400 MAX_EVIDENCE_EXCEEDED for an oversized batch", async () => {
+      const res = await testApp.request(
+        `/field/ingest/${TOKEN}/upload-tokens`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            photos: Array.from({ length: 21 }, () => ({ fileType: "image/jpeg" })),
+          }),
+        },
+      );
+
+      const payload = await expectError(res, 400, "MAX_EVIDENCE_EXCEEDED");
+      expect(payload.error.meta.limit).toBe(20);
+      expect(mockGenerateUploadTokens).not.toHaveBeenCalled();
+    });
+
+    it("returns 400 MAX_EVIDENCE_EXCEEDED when the item is already at the limit", async () => {
+      mockCountActiveEvidence.mockResolvedValue(20);
+
+      const res = await testApp.request(
+        `/field/ingest/${TOKEN}/upload-tokens`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ photos: [{ fileType: "image/jpeg" }] }),
+        },
+      );
+
+      const payload = await expectError(res, 400, "MAX_EVIDENCE_EXCEEDED");
+      expect(payload.error.meta.submitted).toBe(21);
+      expect(mockGenerateUploadTokens).not.toHaveBeenCalled();
     });
 
     it("returns 404 FIELD_TOKEN_INVALID for a dead token", async () => {
@@ -299,6 +418,10 @@ describe("Field intake routes", () => {
      * at any object in the bucket, because a token-holder can confirm arbitrary
      * keys. The keys this item's own upload-token route mints are the only ones
      * it may claim.
+     *
+     * The code is `EVIDENCE_KEY_INVALID`, not `EVIDENCE_TYPE_MISMATCH`: the type
+     * was fine, the KEY was never issued here. Reporting the wrong one would send
+     * the caller to change a field that is not the problem.
      */
     it("refuses a storage key this item's upload route did not mint", async () => {
       const res = await submit({
@@ -310,8 +433,30 @@ describe("Field intake routes", () => {
         ],
       });
 
-      await expectError(res, 400, "EVIDENCE_TYPE_MISMATCH");
+      await expectError(res, 400, "EVIDENCE_KEY_INVALID");
       expect(mockSubmitFieldEvidence).not.toHaveBeenCalled();
+    });
+
+    /**
+     * S1's real enforcement, at the one call that INSERTs. A token-holder could
+     * otherwise submit unbounded rows because the mint writes nothing.
+     */
+    it("returns 400 MAX_EVIDENCE_EXCEEDED when the item is already at the limit", async () => {
+      mockCountActiveEvidence.mockResolvedValue(20);
+
+      const res = await submit({ photos: validPhotos() });
+
+      const payload = await expectError(res, 400, "MAX_EVIDENCE_EXCEEDED");
+      expect(payload.error.meta.submitted).toBe(21);
+      expect(mockSubmitFieldEvidence).not.toHaveBeenCalled();
+    });
+
+    it("allows a submit that lands exactly on the limit", async () => {
+      mockCountActiveEvidence.mockResolvedValue(19);
+
+      const res = await submit({ photos: validPhotos() });
+
+      expect(res.status).toBe(200);
     });
 
     it("carries the optional EXIF metadata through", async () => {
