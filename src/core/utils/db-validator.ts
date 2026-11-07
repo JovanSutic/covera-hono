@@ -7,7 +7,7 @@ import {
   BadRequestException,
 } from "@/core/errors/error.exceptions";
 import type { ErrorCode } from "@/core/errors/error.codes";
-import { inspections, reservations, users, locations, apartments, inspectionFlags, assets, apartmentShotAssets, apartmentShots, assetTypes } from "@/db";
+import { inspections, reservations, users, locations, apartments, inspectionFlags, assets, apartmentShotAssets, apartmentShots, assetTypes, incidents, incidentItems } from "@/db";
 
 /**
  * Maps a registry resource key to its table and its NOT_FOUND code.
@@ -21,6 +21,8 @@ const resourceRegistry = {
   inspections:  { table: inspections,  code: "INSPECTION_NOT_FOUND",  label: "Inspection" },
   assets:       { table: assets,       code: "ASSET_NOT_FOUND",       label: "Asset" },
   assetTypes:   { table: assetTypes,   code: "ASSET_TYPE_NOT_FOUND",  label: "Asset type" },
+  incidents:     { table: incidents,     code: "INCIDENT_NOT_FOUND",     label: "Incident" },
+  incidentItems: { table: incidentItems, code: "INCIDENT_NOT_FOUND",     label: "Incident item" },
 } as const satisfies Record<string, { table: unknown; code: ErrorCode; label: string }>;
 
 type ResourceType = keyof typeof resourceRegistry;

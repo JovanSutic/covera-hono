@@ -172,12 +172,16 @@ const analyze = (file: string) => {
 
 const contractFiles: string[] = [];
 for (const module of readdirSync(MODULES)) {
-  const file = join(MODULES, module, `${module}.contract.ts`);
-  try {
-    readFileSync(file);
-    contractFiles.push(file);
-  } catch {
-    // Module has no contract; not this check's problem.
+  // EVERY `*.contract.ts` in the module, not just `<module>.contract.ts`.
+  //
+  // A module may legitimately declare a second contract for a different trust
+  // boundary — the tokenized field surface lives in `incidents.field.contract.ts`
+  // — and globbing only the canonical name made that file invisible to this
+  // check. An unauthenticated surface is the one that most needs the check, so
+  // silently skipping it was the worst possible failure mode.
+  for (const entry of readdirSync(join(MODULES, module))) {
+    if (!entry.endsWith(".contract.ts")) continue;
+    contractFiles.push(join(MODULES, module, entry));
   }
 }
 

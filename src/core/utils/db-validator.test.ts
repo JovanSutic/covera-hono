@@ -14,6 +14,8 @@ import {
   apartments,
   assetTypes,
   assets,
+  incidentItems,
+  incidents,
   inspections,
   locations,
   reservations,
@@ -142,6 +144,8 @@ describe("checkExistenceQueries", () => {
     ["inspections", inspections],
     ["assets", assets],
     ["assetTypes", assetTypes],
+    ["incidents", incidents],
+    ["incidentItems", incidentItems],
   ];
 
   it.each(expected)("%s queries its own table with a filter", async (resource, table) => {

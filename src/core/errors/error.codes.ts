@@ -27,6 +27,9 @@ export const ERROR_REGISTRY = {
   ASSET_TYPE_INVALID:        { status: 400, description: "The referenced asset type does not exist." },
   AUTH_PROVIDER_ERROR:       { status: 400, description: "The authentication provider rejected the request." },
   INVITATION_ERROR:          { status: 400, description: "The invitation could not be dispatched." },
+  INCIDENT_WINDOW_EXPIRED:   { status: 400, description: "The claim is outside the window in which it can be opened." },
+  ASSET_NOT_IN_APARTMENT:    { status: 400, description: "The asset does not belong to the apartment the claim is for." },
+  EVIDENCE_TYPE_MISMATCH:    { status: 400, description: "The evidence type is not valid for this item." },
 
   // ---- 401 -----------------------------------------------------------------
   AUTH_TOKEN_MISSING:   { status: 401, description: "No authentication token was supplied." },
@@ -47,6 +50,8 @@ export const ERROR_REGISTRY = {
   LOCATION_NOT_FOUND:   { status: 404, description: "Location does not exist." },
   USER_NOT_FOUND:       { status: 404, description: "User does not exist." },
   FLAG_NOT_FOUND:       { status: 404, description: "Flag does not exist." },
+  INCIDENT_NOT_FOUND:   { status: 404, description: "Incident does not exist." },
+  FIELD_TOKEN_INVALID:  { status: 404, description: "The field link is not valid, has expired, or has already been used." },
 
   // ---- 409 -----------------------------------------------------------------
   RESERVATION_OVERLAP:      { status: 409, description: "Reservation overlaps an existing reservation." },
@@ -56,6 +61,9 @@ export const ERROR_REGISTRY = {
   APARTMENT_SHOTS_LOCKED:   { status: 409, description: "Shots are locked by an active reservation." },
   DUPLICATE_RECORD:         { status: 409, description: "A record with these values already exists." },
   RELATED_RECORD_INVALID:   { status: 409, description: "A referenced record does not exist or is still in use." },
+  INCIDENT_ALREADY_EXISTS:  { status: 409, description: "An incident already exists for this reservation." },
+  INCIDENT_NOT_READY:       { status: 409, description: "The claim cannot be filed until every item has its photos." },
+  INCIDENT_ALREADY_FILED:   { status: 409, description: "The claim has already been filed." },
 
   // ---- 500 / other ---------------------------------------------------------
   INTERNAL_SERVER_ERROR: { status: 500, description: "An unexpected error occurred." },

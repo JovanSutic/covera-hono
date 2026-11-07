@@ -1,0 +1,15 @@
+# General
+This is an additional prep document besides covera-hono\src\docs\incident_management_backend_blueprint.md that should be used to explain the new feature Incident, and its relations with other entities in the project.
+
+# Entity
+Incident is something that host is creating for a specific reservation and it represent situation where during this reservation in apartment on one or more assets there is spotted damage or theft. This means that Incident needs to be connected with the reservation, and this is 1-1 connection, reservation can have no incidents or only 1. And incident has to have connection to only 1 reservation.
+Also, incident has items, so sub entities that represent the damaged or stolen assets from the apartment. So in plain language. We have an apartment, that has a reservation, meaning it is occupied by some guest, during this time the guest can steal some assets or he can damage them. The incident and incident items are the way how our system is going to keep track of that.
+
+# Characteristics
+So we have defined the connections with other system entities, but there are features of the incident. Like status. As the whole purpose of the is to get the guest or Aircover to pay off the damage done, we need to track the incident with different statuses. I think that in the blueprint there is more data about this. 
+Also there needs to be proofs of damage, we already have photos for the state before, now we need photos of the incident asset that will prove how much damage was done. The issue here is that we can't really tell how much photos we will need, so maybe sometimes there will be enough to make 1-2 photos, but sometimes more. So system should be flexible enough to store and connect multiple, unknown amount of photos per incident item.
+Also there is the valuation of each item which is very important. this valuation should be backed by some documentation but here I just want to explain what and why it is happening in the system. We should provide the exact types of proofs like receipts, or links to similar grade products, or something else, but the system needs to drive the user what needs to be provided so the damage claim will have more chance of success.
+User can open an incident but this doesn't mean that opened incident will result in the filled request in the Air resolution center, then filled request can be accepted by the guest, accepted by the Aircover (the insurance), or it can be rejected. The accepted request/damage claim can vary in the value being reimbursed. So everything that we are doing with this new system features is making this process more organized, standardized and connected.
+
+# General system Flow
+So from the system perspective. Host has an apartment, Apartment has assets and reservations, during some reservations some assets can be stolen or damaged, then Incident should be created, they are pointing to the right reservation and assets, and they are providing and saving documents and data that are needed for the quality and righteous reimbursement.
