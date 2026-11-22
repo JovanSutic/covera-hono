@@ -11,6 +11,7 @@ const {
   mockGetFieldEvidenceGuidance,
   mockGenerateUploadTokens,
   mockCountActiveEvidence,
+  mockCountActivePhotos,
   mockSubmitFieldEvidence,
 } = vi.hoisted(() => ({
   mockGetFieldContext: vi.fn(),
@@ -19,6 +20,7 @@ const {
   mockGetFieldEvidenceGuidance: vi.fn(),
   mockGenerateUploadTokens: vi.fn(),
   mockCountActiveEvidence: vi.fn(),
+  mockCountActivePhotos: vi.fn(),
   mockSubmitFieldEvidence: vi.fn(),
 }));
 
@@ -39,6 +41,7 @@ vi.mock("./incidents.service", async () => {
       getFieldEvidenceGuidance: mockGetFieldEvidenceGuidance,
       generateFieldUploadTokens: mockGenerateUploadTokens,
       countActiveEvidence: mockCountActiveEvidence,
+      countActivePhotos: mockCountActivePhotos,
       submitFieldEvidence: mockSubmitFieldEvidence,
     },
   };
@@ -92,11 +95,13 @@ describe("Field intake routes", () => {
         "damage_photo_closeup",
       ],
       attachedEvidenceCounts: {},
+      photoAllowance: { max: 4, required: 2, attached: 0, remaining: 4 },
     });
     mockGenerateUploadTokens.mockResolvedValue([
       { uploadUrl: "https://upload.example/presigned", key: "k" },
     ]);
     mockCountActiveEvidence.mockResolvedValue(0);
+    mockCountActivePhotos.mockResolvedValue(0);
     mockSubmitFieldEvidence.mockResolvedValue({
       itemStatus: "photos_collected",
       evidenceCount: 1,
@@ -125,6 +130,7 @@ describe("Field intake routes", () => {
       mockGetFieldEvidenceGuidance.mockResolvedValue({
         requiredEvidenceTypes: ["damage_photo_wide", "damage_photo_closeup"],
         attachedEvidenceCounts: { damage_photo_wide: 1 },
+        photoAllowance: { max: 4, required: 2, attached: 1, remaining: 3 },
       });
 
       const res = await testApp.request(`/field/ingest/${TOKEN}`);
@@ -135,6 +141,18 @@ describe("Field intake routes", () => {
         "damage_photo_closeup",
       ]);
       expect(data.attachedEvidenceCounts).toEqual({ damage_photo_wide: 1 });
+      /**
+       * The same rule the host surface and both writes use, so the field page
+       * offers exactly the photos the submit will accept. It carries no storage
+       * key and no money, which is why it is safe here (D9) — the forbidden-key
+       * test below asserts that against the serialised body.
+       */
+      expect(data.photoAllowance).toEqual({
+        max: 4,
+        required: 2,
+        attached: 1,
+        remaining: 3,
+      });
       expect(mockGetFieldEvidenceGuidance).toHaveBeenCalledWith(
         expect.any(Object),
         ITEM_ID,
@@ -171,6 +189,7 @@ describe("Field intake routes", () => {
       mockGetFieldEvidenceGuidance.mockResolvedValue({
         requiredEvidenceTypes: ["damage_photo_wide", "damage_photo_closeup"],
         attachedEvidenceCounts: { damage_photo_wide: 1 },
+        photoAllowance: { max: 4, required: 2, attached: 1, remaining: 3 },
       });
 
       const res = await testApp.request(`/field/ingest/${TOKEN}`);
@@ -453,6 +472,30 @@ describe("Field intake routes", () => {
 
     it("allows a submit that lands exactly on the limit", async () => {
       mockCountActiveEvidence.mockResolvedValue(19);
+
+      const res = await submit({ photos: validPhotos() });
+
+      expect(res.status).toBe(200);
+    });
+
+    /**
+     * The operator's four-photo rule, enforced on the unauthenticated surface
+     * too. A separate code from `MAX_EVIDENCE_EXCEEDED` because the limits are
+     * different numbers, and the cleaner is the one who has to drop a shot.
+     */
+    it("returns 400 MAX_ITEM_PHOTOS_EXCEEDED when a fifth photo would land", async () => {
+      mockCountActivePhotos.mockResolvedValue(4);
+
+      const res = await submit({ photos: validPhotos() });
+
+      const payload = await expectError(res, 400, "MAX_ITEM_PHOTOS_EXCEEDED");
+      expect(payload.error.meta.limit).toBe(4);
+      expect(payload.error.meta.submitted).toBe(5);
+      expect(mockSubmitFieldEvidence).not.toHaveBeenCalled();
+    });
+
+    it("allows a submit that lands exactly on the photo limit", async () => {
+      mockCountActivePhotos.mockResolvedValue(3);
 
       const res = await submit({ photos: validPhotos() });
 

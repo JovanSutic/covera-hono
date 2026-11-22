@@ -1,0 +1,778 @@
+diff --git a/src/core/errors/error.codes.test.ts b/src/core/errors/error.codes.test.ts
+index f0027c3..cc574b4 100644
+--- a/src/core/errors/error.codes.test.ts
++++ b/src/core/errors/error.codes.test.ts
+@@ -43,6 +43,7 @@ const EXPECTED_STATUS: Record<ErrorCode, number> = {
+   EVIDENCE_METADATA_INVALID: 400,
+   EVIDENCE_KEY_INVALID: 400,
+   MAX_EVIDENCE_EXCEEDED: 400,
++  MAX_ITEM_PHOTOS_EXCEEDED: 400,
+   // 401
+   AUTH_TOKEN_MISSING: 401,
+   AUTH_TOKEN_INVALID: 401,
+diff --git a/src/core/errors/error.codes.ts b/src/core/errors/error.codes.ts
+index 0baf0d9..5d5855a 100644
+--- a/src/core/errors/error.codes.ts
++++ b/src/core/errors/error.codes.ts
+@@ -33,6 +33,7 @@ export const ERROR_REGISTRY = {
+   EVIDENCE_METADATA_INVALID: { status: 400, description: "The evidence carries metadata its type cannot have." },
+   EVIDENCE_KEY_INVALID:      { status: 400, description: "The evidence storage key was not issued for this item." },
+   MAX_EVIDENCE_EXCEEDED:     { status: 400, description: "The per-item evidence limit would be exceeded." },
++  MAX_ITEM_PHOTOS_EXCEEDED:  { status: 400, description: "The per-item photo limit would be exceeded." },
+ 
+   // ---- 401 -----------------------------------------------------------------
+   AUTH_TOKEN_MISSING:   { status: 401, description: "No authentication token was supplied." },
+diff --git a/src/modules/incidents/incidents.contract.ts b/src/modules/incidents/incidents.contract.ts
+index b218ae2..e925e5b 100644
+--- a/src/modules/incidents/incidents.contract.ts
++++ b/src/modules/incidents/incidents.contract.ts
+@@ -118,6 +118,7 @@ const itemEvidenceErrors = errorResponses([
+   "EVIDENCE_METADATA_INVALID",
+   "EVIDENCE_KEY_INVALID",
+   "MAX_EVIDENCE_EXCEEDED",
++  "MAX_ITEM_PHOTOS_EXCEEDED",
+ ]);
+ 
+ const reissueTokenErrors = errorResponses([
+diff --git a/src/modules/incidents/incidents.errors.ts b/src/modules/incidents/incidents.errors.ts
+index c2eda61..52c395d 100644
+--- a/src/modules/incidents/incidents.errors.ts
++++ b/src/modules/incidents/incidents.errors.ts
+@@ -115,6 +115,20 @@ export const incidentErrors = defineErrors(
+         `You can attach at most ${ctx.limit} items of evidence per claim item, ` +
+         `but ${ctx.submitted} were submitted. Remove some and try again.`,
+     },
++    /**
++     * Distinct from `maxEvidenceExceeded`: that one bounds EVERYTHING an item may
++     * carry, this one bounds its PHOTOS. A caller with four photos and no receipt
++     * has not come near the evidence cap, so reporting it would send them looking
++     * for the wrong rule.
++     */
++    maxItemPhotosExceeded: {
++      status: 400 as const,
++      code: "MAX_ITEM_PHOTOS_EXCEEDED" as const,
++      description: "The per-item photo limit would be exceeded.",
++      message: (ctx: { limit: number; submitted: number }) =>
++        `You can have at most ${ctx.limit} photos on a claim item, but ${ctx.submitted} ` +
++        "would be on it. Remove one photo and try again.",
++    },
+     itemNotFound: {
+       status: 404 as const,
+       code: "INCIDENT_ITEM_NOT_FOUND" as const,
+diff --git a/src/modules/incidents/incidents.field.contract.ts b/src/modules/incidents/incidents.field.contract.ts
+index c93b0b6..ae8ca27 100644
+--- a/src/modules/incidents/incidents.field.contract.ts
++++ b/src/modules/incidents/incidents.field.contract.ts
+@@ -37,6 +37,12 @@ const fieldSubmitErrors = errorResponses([
+   ...VALIDATION,
+   "FIELD_TOKEN_INVALID",
+   "EVIDENCE_TYPE_MISMATCH",
++  // Named because the handler throws them: `check-contracts.ts` only requires
++  // the statuses a GUARD implies, so a handler-thrown 400 is otherwise invisible
++  // here and the document would omit failures the route really produces (D15).
++  "EVIDENCE_KEY_INVALID",
++  "MAX_EVIDENCE_EXCEEDED",
++  "MAX_ITEM_PHOTOS_EXCEEDED",
+   "INTERNAL_SERVER_ERROR",
+ ]);
+ 
+diff --git a/src/modules/incidents/incidents.field.route.ts b/src/modules/incidents/incidents.field.route.ts
+index 9239526..b8191dd 100644
+--- a/src/modules/incidents/incidents.field.route.ts
++++ b/src/modules/incidents/incidents.field.route.ts
+@@ -8,6 +8,7 @@ import {
+   incidentsService,
+   requiredPhotoTypes,
+   MAX_EVIDENCE_PER_ITEM,
++  MAX_ITEM_PHOTOS,
+ } from "./incidents.service";
+ import { incidentErrors } from "./incidents.errors";
+ 
+@@ -84,6 +85,7 @@ app.openapi(getFieldIngestRoute, async (c) => {
+       baselinePhotos,
+       requiredEvidenceTypes: guidance.requiredEvidenceTypes,
+       attachedEvidenceCounts: guidance.attachedEvidenceCounts,
++      photoAllowance: guidance.photoAllowance,
+       tokenExpiresAt: context.item.tokenExpiresAt.toISOString(),
+     },
+     200,
+@@ -176,6 +178,22 @@ app.openapi(submitFieldEvidenceRoute, async (c) => {
+     });
+   }
+ 
++  // The PHOTO cap (D10). Every photo here is a photo by construction — the field
++  // submit accepts no documents — so the batch size itself is what is counted
++  // against the item's existing photos. Same rule the host attach enforces, so
++  // the field page's `photoAllowance` and this refusal cannot disagree.
++  const existingPhotos = await incidentsService.countActivePhotos(
++    db,
++    context.item.id,
++  );
++
++  if (existingPhotos + body.photos.length > MAX_ITEM_PHOTOS) {
++    throw incidentErrors.maxItemPhotosExceeded({
++      limit: MAX_ITEM_PHOTOS,
++      submitted: existingPhotos + body.photos.length,
++    });
++  }
++
+   const result = await incidentsService.submitFieldEvidence(
+     db,
+     { itemId: context.item.id, incidentId: context.incidentId },
+diff --git a/src/modules/incidents/incidents.field.test.ts b/src/modules/incidents/incidents.field.test.ts
+index c19d602..8ae2060 100644
+--- a/src/modules/incidents/incidents.field.test.ts
++++ b/src/modules/incidents/incidents.field.test.ts
+@@ -11,6 +11,7 @@ const {
+   mockGetFieldEvidenceGuidance,
+   mockGenerateUploadTokens,
+   mockCountActiveEvidence,
++  mockCountActivePhotos,
+   mockSubmitFieldEvidence,
+ } = vi.hoisted(() => ({
+   mockGetFieldContext: vi.fn(),
+@@ -19,6 +20,7 @@ const {
+   mockGetFieldEvidenceGuidance: vi.fn(),
+   mockGenerateUploadTokens: vi.fn(),
+   mockCountActiveEvidence: vi.fn(),
++  mockCountActivePhotos: vi.fn(),
+   mockSubmitFieldEvidence: vi.fn(),
+ }));
+ 
+@@ -39,6 +41,7 @@ vi.mock("./incidents.service", async () => {
+       getFieldEvidenceGuidance: mockGetFieldEvidenceGuidance,
+       generateFieldUploadTokens: mockGenerateUploadTokens,
+       countActiveEvidence: mockCountActiveEvidence,
++      countActivePhotos: mockCountActivePhotos,
+       submitFieldEvidence: mockSubmitFieldEvidence,
+     },
+   };
+@@ -92,11 +95,13 @@ describe("Field intake routes", () => {
+         "damage_photo_closeup",
+       ],
+       attachedEvidenceCounts: {},
++      photoAllowance: { max: 4, required: 2, attached: 0, remaining: 4 },
+     });
+     mockGenerateUploadTokens.mockResolvedValue([
+       { uploadUrl: "https://upload.example/presigned", key: "k" },
+     ]);
+     mockCountActiveEvidence.mockResolvedValue(0);
++    mockCountActivePhotos.mockResolvedValue(0);
+     mockSubmitFieldEvidence.mockResolvedValue({
+       itemStatus: "photos_collected",
+       evidenceCount: 1,
+@@ -125,6 +130,7 @@ describe("Field intake routes", () => {
+       mockGetFieldEvidenceGuidance.mockResolvedValue({
+         requiredEvidenceTypes: ["damage_photo_wide", "damage_photo_closeup"],
+         attachedEvidenceCounts: { damage_photo_wide: 1 },
++        photoAllowance: { max: 4, required: 2, attached: 1, remaining: 3 },
+       });
+ 
+       const res = await testApp.request(`/field/ingest/${TOKEN}`);
+@@ -135,6 +141,18 @@ describe("Field intake routes", () => {
+         "damage_photo_closeup",
+       ]);
+       expect(data.attachedEvidenceCounts).toEqual({ damage_photo_wide: 1 });
++      /**
++       * The same rule the host surface and both writes use, so the field page
++       * offers exactly the photos the submit will accept. It carries no storage
++       * key and no money, which is why it is safe here (D9) — the forbidden-key
++       * test below asserts that against the serialised body.
++       */
++      expect(data.photoAllowance).toEqual({
++        max: 4,
++        required: 2,
++        attached: 1,
++        remaining: 3,
++      });
+       expect(mockGetFieldEvidenceGuidance).toHaveBeenCalledWith(
+         expect.any(Object),
+         ITEM_ID,
+@@ -171,6 +189,7 @@ describe("Field intake routes", () => {
+       mockGetFieldEvidenceGuidance.mockResolvedValue({
+         requiredEvidenceTypes: ["damage_photo_wide", "damage_photo_closeup"],
+         attachedEvidenceCounts: { damage_photo_wide: 1 },
++        photoAllowance: { max: 4, required: 2, attached: 1, remaining: 3 },
+       });
+ 
+       const res = await testApp.request(`/field/ingest/${TOKEN}`);
+@@ -459,6 +478,30 @@ describe("Field intake routes", () => {
+       expect(res.status).toBe(200);
+     });
+ 
++    /**
++     * The operator's four-photo rule, enforced on the unauthenticated surface
++     * too. A separate code from `MAX_EVIDENCE_EXCEEDED` because the limits are
++     * different numbers, and the cleaner is the one who has to drop a shot.
++     */
++    it("returns 400 MAX_ITEM_PHOTOS_EXCEEDED when a fifth photo would land", async () => {
++      mockCountActivePhotos.mockResolvedValue(4);
++
++      const res = await submit({ photos: validPhotos() });
++
++      const payload = await expectError(res, 400, "MAX_ITEM_PHOTOS_EXCEEDED");
++      expect(payload.error.meta.limit).toBe(4);
++      expect(payload.error.meta.submitted).toBe(5);
++      expect(mockSubmitFieldEvidence).not.toHaveBeenCalled();
++    });
++
++    it("allows a submit that lands exactly on the photo limit", async () => {
++      mockCountActivePhotos.mockResolvedValue(3);
++
++      const res = await submit({ photos: validPhotos() });
++
++      expect(res.status).toBe(200);
++    });
++
+     it("carries the optional EXIF metadata through", async () => {
+       vi.clearAllMocks();
+       mockGetFieldContext.mockResolvedValue(fieldContext());
+diff --git a/src/modules/incidents/incidents.route.ts b/src/modules/incidents/incidents.route.ts
+index ba55288..01b52e7 100644
+--- a/src/modules/incidents/incidents.route.ts
++++ b/src/modules/incidents/incidents.route.ts
+@@ -18,7 +18,9 @@ import {
+   incidentsService,
+   isClaimEditable,
+   allowedEvidenceTypes,
++  evidenceKind,
+   MAX_EVIDENCE_PER_ITEM,
++  MAX_ITEM_PHOTOS,
+   type IncidentQuery,
+ } from "./incidents.service";
+ import { incidentErrors } from "./incidents.errors";
+@@ -482,6 +484,22 @@ app.openapi(attachEvidenceRoute, async (c) => {
+     });
+   }
+ 
++  // The PHOTO cap, counted separately (D10): `MAX_EVIDENCE_PER_ITEM` bounds
++  // everything an item may carry and so cannot express "at most four photos".
++  // Only the photo-shaped rows in this batch spend it, so a fifth receipt is
++  // never refused for a photo's sake (D3).
++  const submittedPhotos = body.evidence.filter(
++    (row: { evidenceType: string }) => evidenceKind(row.evidenceType) === "photo",
++  ).length;
++  const existingPhotos = await incidentsService.countActivePhotos(db, itemId);
++
++  if (existingPhotos + submittedPhotos > MAX_ITEM_PHOTOS) {
++    throw incidentErrors.maxItemPhotosExceeded({
++      limit: MAX_ITEM_PHOTOS,
++      submitted: existingPhotos + submittedPhotos,
++    });
++  }
++
+   const result = await incidentsService.attachEvidence(
+     db,
+     { incidentId: id, itemId },
+diff --git a/src/modules/incidents/incidents.schema.ts b/src/modules/incidents/incidents.schema.ts
+index 05e3bcf..d868be1 100644
+--- a/src/modules/incidents/incidents.schema.ts
++++ b/src/modules/incidents/incidents.schema.ts
+@@ -30,6 +30,36 @@ export const IncidentEvidenceSchema = SelectClaimEvidenceSchema.extend({
+ /** Back-compat alias: the evidence schema is the only one the module serves. */
+ export const ClaimEvidenceSchema = IncidentEvidenceSchema;
+ 
++/**
++ * How many photos an item may hold, and how much room is left.
++ *
++ * DERIVED, never stored (`buildPhotoAllowance`): a counter column beside the
++ * evidence rows would be a second source of truth for the same fact and would
++ * drift the first time a photo was soft-deleted. `required` is what the cleaner
++ * is asked to shoot — advisory, not a floor the API enforces — so the client can
++ * show the outstanding shots without re-deriving the type mapping.
++ */
++export const PhotoAllowanceSchema = z
++  .object({
++    max: z.number().int().openapi({
++      description: "The most photos this item may hold.",
++      example: 4,
++    }),
++    required: z.number().int().openapi({
++      description: "How many shots this item's incident type asks for.",
++      example: 2,
++    }),
++    attached: z.number().int().openapi({
++      description: "How many photos the item currently holds.",
++      example: 1,
++    }),
++    remaining: z.number().int().openapi({
++      description: "How many more photos may be attached.",
++      example: 3,
++    }),
++  })
++  .openapi("PhotoAllowance");
++
+ /**
+  * One damaged or stolen asset, with its catalogue row and its evidence.
+  *
+@@ -44,6 +74,7 @@ export const ClaimEvidenceSchema = IncidentEvidenceSchema;
+ export const IncidentItemBaseSchema = SelectIncidentItemSchema.extend({
+   asset: AssetSchema,
+   evidence: z.array(IncidentEvidenceSchema),
++  photoAllowance: PhotoAllowanceSchema,
+ });
+ 
+ export const IncidentItemSchema = IncidentItemBaseSchema.omit({
+@@ -415,6 +446,7 @@ export const FieldIngestSchema = z
+      */
+     requiredEvidenceTypes: z.array(z.string()),
+     attachedEvidenceCounts: z.record(z.string(), z.number().int()),
++    photoAllowance: PhotoAllowanceSchema,
+     tokenExpiresAt: z.string().datetime(),
+   })
+   .openapi("FieldIngest");
+@@ -480,6 +512,7 @@ export type AttachEvidenceResponse = z.infer<
+   typeof AttachEvidenceResponseSchema
+ >;
+ export type IncidentQuery = z.infer<typeof IncidentQuerySchema>;
++export type PhotoAllowance = z.infer<typeof PhotoAllowanceSchema>;
+ export type PaginatedIncidents = z.infer<typeof PaginatedIncidentsSchema>;
+ export type FieldAsset = z.infer<typeof FieldAssetSchema>;
+ export type FieldIngest = z.infer<typeof FieldIngestSchema>;
+diff --git a/src/modules/incidents/incidents.service.test.ts b/src/modules/incidents/incidents.service.test.ts
+index 7d60b0f..19e48c1 100644
+--- a/src/modules/incidents/incidents.service.test.ts
++++ b/src/modules/incidents/incidents.service.test.ts
+@@ -1,7 +1,12 @@
+ import { describe, it, expect, vi, beforeEach } from "vitest";
+-import { sql } from "drizzle-orm";
++import { sql, and, eq, inArray } from "drizzle-orm";
+ import { PgDialect } from "drizzle-orm/pg-core";
+-import { DOCUMENT_EVIDENCE_TYPES, EVIDENCE_KIND } from "@/db";
++import {
++  DOCUMENT_EVIDENCE_TYPES,
++  EVIDENCE_KIND,
++  PHOTO_EVIDENCE_TYPES,
++  claimEvidence,
++} from "@/db";
+ import {
+   incidentsService,
+   markReadyIfAllItemsCollected,
+@@ -15,6 +20,8 @@ import {
+   requiredPhotoTypes,
+   isClaimEditable,
+   MAX_EVIDENCE_PER_ITEM,
++  MAX_ITEM_PHOTOS,
++  buildPhotoAllowance,
+   TOKEN_TTL_MS,
+   EMERGENCY_WINDOW_MS,
+ } from "./incidents.service";
+@@ -848,7 +855,7 @@ describe("reissueToken", () => {
+   it("replaces the token and extends the expiry in one write", async () => {
+     const { db, captured } = reissueDb(
+       [{ id: ITEM_ID }],
+-      { id: ITEM_ID, cleanerToken: "fresh", asset: null, evidence: [] },
++      { id: ITEM_ID, type: "damage", cleanerToken: "fresh", asset: null, evidence: [] },
+     );
+     const before = Date.now();
+ 
+@@ -999,6 +1006,97 @@ describe("assessFeasibility (Trigger A)", () => {
+   });
+ });
+ 
++describe("buildPhotoAllowance", () => {
++  const photo = (evidenceType: string) => ({ evidenceType, status: "active" });
++
++  /**
++   * The cap's read, pinned at the SQL level.
++   *
++   * `countActivePhotos` counts ONLY active photo rows, and the test asserts the
++   * predicate rather than a return value: the recording mock swallows the
++   * builder chain, so a dropped `status = 'active'` or a lost type filter would
++   * look green here while the real query counted withdrawn photos or documents.
++   * The type list and `buildPhotoAllowance`'s filter both derive from
++   * `EVIDENCE_KIND`, so this pins that they cannot drift (D3).
++   */
++  it("counts only active photos, in SQL", () => {
++    const rendered = new PgDialect().sqlToQuery(
++      and(
++        eq(claimEvidence.incidentItemId, ITEM_ID),
++        eq(claimEvidence.status, "active"),
++        inArray(claimEvidence.evidenceType, PHOTO_EVIDENCE_TYPES),
++      )!.getSQL(),
++    ).sql;
++
++    expect(rendered).toContain(`"claim_evidence"."incident_item_id" = $1`);
++    expect(rendered).toContain(`"claim_evidence"."status" = $2`);
++    expect(rendered).toContain(`"claim_evidence"."evidence_type" in ($3, $4, $5)`);
++    // Three photo types, and no document among them.
++    expect(PHOTO_EVIDENCE_TYPES).toHaveLength(3);
++    for (const doc of DOCUMENT_EVIDENCE_TYPES) {
++      expect(PHOTO_EVIDENCE_TYPES).not.toContain(doc);
++    }
++  });
++
++
++  it("caps every item at four photos, whatever it requires", () => {
++    expect(buildPhotoAllowance("damage", []).max).toBe(4);
++    expect(buildPhotoAllowance("theft", []).max).toBe(4);
++  });
++
++  /**
++   * The operator's arithmetic: the requirement is what the cleaner is prompted
++   * for, so a `damage` item (2 required) may add 2 more and a `theft` item
++   * (1 required) may add 3. Both land on 4.
++   */
++  it("reports the required shots per type as advisory guidance", () => {
++    expect(buildPhotoAllowance("damage", []).required).toBe(2);
++    expect(buildPhotoAllowance("theft", []).required).toBe(1);
++  });
++
++  it("counts only photos, so documents do not spend the allowance", () => {
++    const allowance = buildPhotoAllowance("damage", [
++      photo("damage_photo_wide"),
++      photo("original_purchase_receipt"),
++      photo("handyman_invoice"),
++      photo("police_report"),
++    ]);
++
++    expect(allowance.attached).toBe(1);
++    expect(allowance.remaining).toBe(3);
++  });
++
++  it("reduces the remaining count as photos accumulate", () => {
++    const allowance = buildPhotoAllowance("damage", [
++      photo("damage_photo_wide"),
++      photo("damage_photo_wide"),
++      photo("damage_photo_closeup"),
++      photo("damage_photo_closeup"),
++    ]);
++
++    expect(allowance.attached).toBe(4);
++    expect(allowance.remaining).toBe(0);
++  });
++
++  /**
++   * `remaining` never goes negative: the write refuses a fifth photo, but a read
++   * of an item that somehow holds more must still report a number a UI can use
++   * as a count rather than a negative.
++   */
++  it("floors remaining at zero", () => {
++    const allowance = buildPhotoAllowance("theft", [
++      photo("theft_empty_space_photo"),
++      photo("theft_empty_space_photo"),
++      photo("theft_empty_space_photo"),
++      photo("theft_empty_space_photo"),
++      photo("theft_empty_space_photo"),
++    ]);
++
++    expect(allowance.attached).toBe(5);
++    expect(allowance.remaining).toBe(0);
++  });
++});
++
+ describe("constants", () => {
+   it("holds the token to the blueprint's 12 hours", () => {
+     expect(TOKEN_TTL_MS).toBe(12 * 60 * 60 * 1000);
+@@ -1016,4 +1114,12 @@ describe("constants", () => {
+   it("caps an item's evidence at the same number as a reservation's photos", () => {
+     expect(MAX_EVIDENCE_PER_ITEM).toBe(20);
+   });
++
++  /**
++   * The operator's rule: four photos per item, independent of the asset's
++   * requirement. Pinned as a literal so a change to it is a visible diff.
++   */
++  it("caps an item's photos at four", () => {
++    expect(MAX_ITEM_PHOTOS).toBe(4);
++  });
+ });
+diff --git a/src/modules/incidents/incidents.service.ts b/src/modules/incidents/incidents.service.ts
+index 807583f..ae196b7 100644
+--- a/src/modules/incidents/incidents.service.ts
++++ b/src/modules/incidents/incidents.service.ts
+@@ -26,6 +26,7 @@ import {
+   apartments,
+   EVIDENCE_KIND,
+   DOCUMENT_EVIDENCE_TYPES,
++  PHOTO_EVIDENCE_TYPES,
+   type EvidenceKind,
+   type IncidentItem as IncidentItemRow,
+   Incident,
+@@ -46,6 +47,7 @@ import type {
+   PaginatedIncidents,
+   UpdateIncident,
+   UpdateIncidentItem,
++  PhotoAllowance,
+ } from "./incidents.schema";
+ 
+ const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
+@@ -65,6 +67,22 @@ const DAY_MS = 24 * 60 * 60 * 1000;
+  */
+ export const MAX_EVIDENCE_PER_ITEM = 20;
+ 
++/**
++ * The per-item PHOTO cap.
++ *
++ * The operator's rule: at most four photos per item, whatever the asset's
++ * requirement — a `damage` item needs two shots and may add two more, a `theft`
++ * item needs one and may add three. The required shots are the minimum the
++ * cleaner is prompted for, not a lower cap, which is why the ceiling does not
++ * vary by type.
++ *
++ * Counted separately from `MAX_EVIDENCE_PER_ITEM`, which bounds everything an
++ * item may carry and therefore cannot express "four photos" — and which must
++ * keep counting documents, so a receipt is never refused for a photo's sake
++ * (D3, D4).
++ */
++export const MAX_ITEM_PHOTOS = 4;
++
+ /**
+  * The claim states a host may still change. `submitted_to_guest` and anything
+  * beyond it are frozen: the guest is looking at a filed claim, and its contents
+@@ -128,6 +146,36 @@ export const resolveTime = (
+   return new Date(primary);
+ };
+ 
++/**
++ * How many photos an item may hold, and how much room is left.
++ *
++ * One function for every surface: the host item payload, the field page and the
++ * two writes that enforce the cap all read this, so none of them can disagree
++ * about the same item's headroom — the failure mode being a client that offers
++ * a fifth photo the write then refuses (D6).
++ *
++ * `evidence` is expected to be the ACTIVE rows, as every caller already filters
++ * them through `activeEvidence`: a withdrawn photo must give its slot back
++ * (D7). The photo half comes from `EVIDENCE_KIND` via `evidenceKind`, the same
++ * map `recomputeItemStatus` trusts, so adding an enum member cannot leave this
++ * counting a stale list.
++ */
++export const buildPhotoAllowance = (
++  type: "damage" | "theft",
++  evidence: ReadonlyArray<Record<string, unknown>>,
++): PhotoAllowance => {
++  const attached = (
++    evidence as ReadonlyArray<{ evidenceType: string }>
++  ).filter((row) => evidenceKind(row.evidenceType) === "photo").length;
++
++  return {
++    max: MAX_ITEM_PHOTOS,
++    required: requiredPhotoTypes(type).length,
++    attached,
++    remaining: Math.max(0, MAX_ITEM_PHOTOS - attached),
++  };
++};
++
+ /**
+  * Adds the derived `kind` to an evidence row and renames nothing else.
+  *
+@@ -155,6 +203,7 @@ const hydrateIncident = (incident: any): IncidentWithItems => {
+         ...row,
+         asset: { ...(asset ?? {}), asset_type: asset?.assetType },
+         evidence: activeEvidence(evidence),
++        photoAllowance: buildPhotoAllowance(row.type, activeEvidence(evidence)),
+       };
+     }),
+   } as unknown as IncidentWithItems;
+@@ -187,6 +236,7 @@ const hydrateItem = (item: any): Record<string, any> => {
+     ...row,
+     asset: { ...(asset ?? {}), asset_type: asset?.assetType },
+     evidence: activeEvidence(evidence),
++    photoAllowance: buildPhotoAllowance(row.type, activeEvidence(evidence)),
+   };
+ };
+ 
+@@ -475,6 +525,33 @@ export const incidentsService = {
+     return Number(row?.total ?? 0);
+   },
+ 
++  /**
++   * How many PHOTOS the item currently holds, for the cap.
++   *
++   * The photo-only counterpart of `countActiveEvidence`, kept beside it so the
++   * two bounds an item has — all evidence, and photos — are read the same way.
++   * `PHOTO_EVIDENCE_TYPES` is derived from `EVIDENCE_KIND`, so this SQL test and
++   * `buildPhotoAllowance`'s filter agree by construction rather than by two
++   * lists happening to match (D3, D14).
++   */
++  async countActivePhotos(
++    db: Variables["db"],
++    itemId: string,
++  ): Promise<number> {
++    const [row] = await db
++      .select({ total: count() })
++      .from(claimEvidence)
++      .where(
++        and(
++          eq(claimEvidence.incidentItemId, itemId),
++          eq(claimEvidence.status, "active"),
++          inArray(claimEvidence.evidenceType, PHOTO_EVIDENCE_TYPES),
++        ),
++      );
++
++    return Number(row?.total ?? 0);
++  },
++
+   /**
+    * Trigger A, entire (D8, D9). One method, because the two halves are the same
+    * fact read twice — and two queries is how a host ends up shown "emergency" on
+@@ -626,6 +703,7 @@ export const incidentsService = {
+           ...item,
+           asset: assetById.get(item.assetId),
+           evidence: [],
++          photoAllowance: buildPhotoAllowance(item.type, []),
+         })),
+       } as unknown as CreateIncidentResponse;
+     });
+@@ -700,6 +778,7 @@ export const incidentsService = {
+           ? { ...assetRow.asset, asset_type: assetRow.assetType }
+           : undefined,
+         evidence: [],
++        photoAllowance: buildPhotoAllowance(created.type, []),
+       } as unknown as IncidentItemWithToken;
+     });
+   },
+@@ -1045,6 +1124,7 @@ export const incidentsService = {
+   ): Promise<{
+     requiredEvidenceTypes: string[];
+     attachedEvidenceCounts: Record<string, number>;
++    photoAllowance: PhotoAllowance;
+   }> {
+     const rows = await db
+       .select({ evidenceType: claimEvidence.evidenceType })
+@@ -1064,6 +1144,10 @@ export const incidentsService = {
+     return {
+       requiredEvidenceTypes: requiredPhotoTypes(itemType),
+       attachedEvidenceCounts: counts,
++      // The same derived rule the host payload and the writes use, so the field
++      // page offers exactly as many photos as the submit will accept — three
++      // integers and a cap, which is safe on the unauthenticated surface (D9).
++      photoAllowance: buildPhotoAllowance(itemType, rows as Array<{ evidenceType: string }>),
+     };
+   },
+ 
+diff --git a/src/modules/incidents/incidents.test.ts b/src/modules/incidents/incidents.test.ts
+index cbf68a0..25bd8df 100644
+--- a/src/modules/incidents/incidents.test.ts
++++ b/src/modules/incidents/incidents.test.ts
+@@ -20,6 +20,7 @@ const {
+   mockUpdateItem,
+   mockDeleteItem,
+   mockCountActiveEvidence,
++  mockCountActivePhotos,
+   mockGenerateHostUploadTokens,
+   mockAttachEvidence,
+   mockGetItemWithAsset,
+@@ -42,6 +43,7 @@ const {
+   mockUpdateItem: vi.fn(),
+   mockDeleteItem: vi.fn(),
+   mockCountActiveEvidence: vi.fn(),
++  mockCountActivePhotos: vi.fn(),
+   mockGenerateHostUploadTokens: vi.fn(),
+   mockAttachEvidence: vi.fn(),
+   mockGetItemWithAsset: vi.fn(),
+@@ -76,6 +78,7 @@ vi.mock("./incidents.service", async () => {
+       updateItem: mockUpdateItem,
+       deleteItem: mockDeleteItem,
+       countActiveEvidence: mockCountActiveEvidence,
++      countActivePhotos: mockCountActivePhotos,
+       generateHostUploadTokens: mockGenerateHostUploadTokens,
+       attachEvidence: mockAttachEvidence,
+       getItemWithAsset: mockGetItemWithAsset,
+@@ -191,6 +194,7 @@ const hydratedItem = (overrides: Record<string, unknown> = {}) => ({
+   ...itemRow(),
+   asset: hydratedAsset,
+   evidence: [],
++  photoAllowance: { max: 4, required: 2, attached: 0, remaining: 4 },
+   ...overrides,
+ });
+ 
+@@ -217,6 +221,7 @@ describe("Incidents routes", () => {
+     });
+     mockGetItem.mockResolvedValue(itemRow());
+     mockCountActiveEvidence.mockResolvedValue(0);
++    mockCountActivePhotos.mockResolvedValue(0);
+     mockGetItemWithAsset.mockResolvedValue(hydratedItem());
+   });
+ 
+@@ -641,6 +646,26 @@ describe("Incidents routes", () => {
+       expect(data.items).toEqual([]);
+     });
+ 
++    it("carries each item's photo allowance", async () => {
++      mockGetById.mockResolvedValue({
++        ...createdIncident,
++        items: [hydratedItem()],
++      });
++
++      const res = await testApp.request(`/incidents/${INCIDENT_ID}`, {
++        headers: AUTHED_HEADERS,
++      });
++
++      expect(res.status).toBe(200);
++      const data = await res.json();
++      expect(data.items[0].photoAllowance).toEqual({
++        max: 4,
++        required: 2,
++        attached: 0,
++        remaining: 4,
++      });
++    });
++
+     it("returns 404 INCIDENT_NOT_FOUND for an unknown claim", async () => {
+       mockGetById.mockResolvedValue(null);
+ 
+@@ -1316,6 +1341,62 @@ describe("Incidents routes", () => {
+       expect(mockAttachEvidence).not.toHaveBeenCalled();
+     });
+ 
++    /**
++     * The operator's rule: four photos per item. `MAX_ITEM_PHOTOS_EXCEEDED` is a
++     * distinct code from `MAX_EVIDENCE_EXCEEDED` because the two limits are
++     * different numbers — a client at 4 photos and 0 documents has not come near
++     * the 20-evidence cap, so being told about that one would send it looking
++     * for the wrong rule.
++     */
++    it("returns 400 MAX_ITEM_PHOTOS_EXCEEDED when a fifth photo would land", async () => {
++      mockGetById.mockResolvedValue(createdIncident);
++      mockCountActivePhotos.mockResolvedValue(4);
++
++      const res = await attach([
++        {
++          evidenceType: "damage_photo_wide",
++          storageKey: `incidents/${INCIDENT_ID}/${ITEM_ID}/fifth.jpg`,
++        },
++      ]);
++
++      const payload = await expectError(res, 400, "MAX_ITEM_PHOTOS_EXCEEDED");
++      expect(payload.error.meta.limit).toBe(4);
++      expect(payload.error.meta.submitted).toBe(5);
++      expect(mockAttachEvidence).not.toHaveBeenCalled();
++    });
++
++    it("allows a photo attach that lands exactly on the photo limit", async () => {
++      mockGetById.mockResolvedValue(createdIncident);
++      mockCountActivePhotos.mockResolvedValue(3);
++      mockAttachEvidence.mockResolvedValue({ attachedCount: 1, itemStatus: "photos_collected" });
++
++      const res = await attach([
++        {
++          evidenceType: "damage_photo_closeup",
++          storageKey: `incidents/${INCIDENT_ID}/${ITEM_ID}/fourth.jpg`,
++        },
++      ]);
++
++      expect(res.status).toBe(201);
++    });
++
++    /**
++     * D3: the photo cap counts photos. A document does not spend it, so an item
++     * whose four photos are in can still file its valuation — and a receipt is
++     * never refused because the photo budget is gone.
++     */
++    it("does not count documents against the photo limit", async () => {
++      mockGetById.mockResolvedValue(createdIncident);
++      mockCountActivePhotos.mockResolvedValue(4);
++      mockAttachEvidence.mockResolvedValue({ attachedCount: 1, itemStatus: "complete" });
++
++      const res = await attach([
++        { evidenceType: "original_purchase_receipt", storageKey: key },
++      ]);
++
++      expect(res.status).toBe(201);
++    });
++
+     it("returns 404 INCIDENT_ITEM_NOT_FOUND for an item on another claim", async () => {
+       mockGetById.mockResolvedValue(createdIncident);
+       mockGetItem.mockResolvedValue(null);

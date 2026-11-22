@@ -18,7 +18,9 @@ import {
   incidentsService,
   isClaimEditable,
   allowedEvidenceTypes,
+  evidenceKind,
   MAX_EVIDENCE_PER_ITEM,
+  MAX_ITEM_PHOTOS,
   type IncidentQuery,
 } from "./incidents.service";
 import { incidentErrors } from "./incidents.errors";
@@ -479,6 +481,22 @@ app.openapi(attachEvidenceRoute, async (c) => {
     throw incidentErrors.maxEvidenceExceeded({
       limit: MAX_EVIDENCE_PER_ITEM,
       submitted: existingCount + body.evidence.length,
+    });
+  }
+
+  // The PHOTO cap, counted separately (D10): `MAX_EVIDENCE_PER_ITEM` bounds
+  // everything an item may carry and so cannot express "at most four photos".
+  // Only the photo-shaped rows in this batch spend it, so a fifth receipt is
+  // never refused for a photo's sake (D3).
+  const submittedPhotos = body.evidence.filter(
+    (row: { evidenceType: string }) => evidenceKind(row.evidenceType) === "photo",
+  ).length;
+  const existingPhotos = await incidentsService.countActivePhotos(db, itemId);
+
+  if (existingPhotos + submittedPhotos > MAX_ITEM_PHOTOS) {
+    throw incidentErrors.maxItemPhotosExceeded({
+      limit: MAX_ITEM_PHOTOS,
+      submitted: existingPhotos + submittedPhotos,
     });
   }
 

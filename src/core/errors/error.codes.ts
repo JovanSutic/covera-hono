@@ -33,6 +33,7 @@ export const ERROR_REGISTRY = {
   EVIDENCE_METADATA_INVALID: { status: 400, description: "The evidence carries metadata its type cannot have." },
   EVIDENCE_KEY_INVALID:      { status: 400, description: "The evidence storage key was not issued for this item." },
   MAX_EVIDENCE_EXCEEDED:     { status: 400, description: "The per-item evidence limit would be exceeded." },
+  MAX_ITEM_PHOTOS_EXCEEDED:  { status: 400, description: "The per-item photo limit would be exceeded." },
 
   // ---- 401 -----------------------------------------------------------------
   AUTH_TOKEN_MISSING:   { status: 401, description: "No authentication token was supplied." },

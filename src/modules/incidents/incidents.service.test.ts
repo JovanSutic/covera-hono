@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { sql } from "drizzle-orm";
+import { sql, and, eq, inArray } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { DOCUMENT_EVIDENCE_TYPES, EVIDENCE_KIND } from "@/db";
+import {
+  DOCUMENT_EVIDENCE_TYPES,
+  EVIDENCE_KIND,
+  PHOTO_EVIDENCE_TYPES,
+  claimEvidence,
+} from "@/db";
 import {
   incidentsService,
   markReadyIfAllItemsCollected,
@@ -15,6 +20,8 @@ import {
   requiredPhotoTypes,
   isClaimEditable,
   MAX_EVIDENCE_PER_ITEM,
+  MAX_ITEM_PHOTOS,
+  buildPhotoAllowance,
   TOKEN_TTL_MS,
   EMERGENCY_WINDOW_MS,
 } from "./incidents.service";
@@ -848,7 +855,7 @@ describe("reissueToken", () => {
   it("replaces the token and extends the expiry in one write", async () => {
     const { db, captured } = reissueDb(
       [{ id: ITEM_ID }],
-      { id: ITEM_ID, cleanerToken: "fresh", asset: null, evidence: [] },
+      { id: ITEM_ID, type: "damage", cleanerToken: "fresh", asset: null, evidence: [] },
     );
     const before = Date.now();
 
@@ -999,6 +1006,97 @@ describe("assessFeasibility (Trigger A)", () => {
   });
 });
 
+describe("buildPhotoAllowance", () => {
+  const photo = (evidenceType: string) => ({ evidenceType, status: "active" });
+
+  /**
+   * The cap's read, pinned at the SQL level.
+   *
+   * `countActivePhotos` counts ONLY active photo rows, and the test asserts the
+   * predicate rather than a return value: the recording mock swallows the
+   * builder chain, so a dropped `status = 'active'` or a lost type filter would
+   * look green here while the real query counted withdrawn photos or documents.
+   * The type list and `buildPhotoAllowance`'s filter both derive from
+   * `EVIDENCE_KIND`, so this pins that they cannot drift (D3).
+   */
+  it("counts only active photos, in SQL", () => {
+    const rendered = new PgDialect().sqlToQuery(
+      and(
+        eq(claimEvidence.incidentItemId, ITEM_ID),
+        eq(claimEvidence.status, "active"),
+        inArray(claimEvidence.evidenceType, PHOTO_EVIDENCE_TYPES),
+      )!.getSQL(),
+    ).sql;
+
+    expect(rendered).toContain(`"claim_evidence"."incident_item_id" = $1`);
+    expect(rendered).toContain(`"claim_evidence"."status" = $2`);
+    expect(rendered).toContain(`"claim_evidence"."evidence_type" in ($3, $4, $5)`);
+    // Three photo types, and no document among them.
+    expect(PHOTO_EVIDENCE_TYPES).toHaveLength(3);
+    for (const doc of DOCUMENT_EVIDENCE_TYPES) {
+      expect(PHOTO_EVIDENCE_TYPES).not.toContain(doc);
+    }
+  });
+
+
+  it("caps every item at four photos, whatever it requires", () => {
+    expect(buildPhotoAllowance("damage", []).max).toBe(4);
+    expect(buildPhotoAllowance("theft", []).max).toBe(4);
+  });
+
+  /**
+   * The operator's arithmetic: the requirement is what the cleaner is prompted
+   * for, so a `damage` item (2 required) may add 2 more and a `theft` item
+   * (1 required) may add 3. Both land on 4.
+   */
+  it("reports the required shots per type as advisory guidance", () => {
+    expect(buildPhotoAllowance("damage", []).required).toBe(2);
+    expect(buildPhotoAllowance("theft", []).required).toBe(1);
+  });
+
+  it("counts only photos, so documents do not spend the allowance", () => {
+    const allowance = buildPhotoAllowance("damage", [
+      photo("damage_photo_wide"),
+      photo("original_purchase_receipt"),
+      photo("handyman_invoice"),
+      photo("police_report"),
+    ]);
+
+    expect(allowance.attached).toBe(1);
+    expect(allowance.remaining).toBe(3);
+  });
+
+  it("reduces the remaining count as photos accumulate", () => {
+    const allowance = buildPhotoAllowance("damage", [
+      photo("damage_photo_wide"),
+      photo("damage_photo_wide"),
+      photo("damage_photo_closeup"),
+      photo("damage_photo_closeup"),
+    ]);
+
+    expect(allowance.attached).toBe(4);
+    expect(allowance.remaining).toBe(0);
+  });
+
+  /**
+   * `remaining` never goes negative: the write refuses a fifth photo, but a read
+   * of an item that somehow holds more must still report a number a UI can use
+   * as a count rather than a negative.
+   */
+  it("floors remaining at zero", () => {
+    const allowance = buildPhotoAllowance("theft", [
+      photo("theft_empty_space_photo"),
+      photo("theft_empty_space_photo"),
+      photo("theft_empty_space_photo"),
+      photo("theft_empty_space_photo"),
+      photo("theft_empty_space_photo"),
+    ]);
+
+    expect(allowance.attached).toBe(5);
+    expect(allowance.remaining).toBe(0);
+  });
+});
+
 describe("constants", () => {
   it("holds the token to the blueprint's 12 hours", () => {
     expect(TOKEN_TTL_MS).toBe(12 * 60 * 60 * 1000);
@@ -1015,5 +1113,13 @@ describe("constants", () => {
    */
   it("caps an item's evidence at the same number as a reservation's photos", () => {
     expect(MAX_EVIDENCE_PER_ITEM).toBe(20);
+  });
+
+  /**
+   * The operator's rule: four photos per item, independent of the asset's
+   * requirement. Pinned as a literal so a change to it is a visible diff.
+   */
+  it("caps an item's photos at four", () => {
+    expect(MAX_ITEM_PHOTOS).toBe(4);
   });
 });

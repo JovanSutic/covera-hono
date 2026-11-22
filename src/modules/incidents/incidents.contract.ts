@@ -118,6 +118,7 @@ const itemEvidenceErrors = errorResponses([
   "EVIDENCE_METADATA_INVALID",
   "EVIDENCE_KEY_INVALID",
   "MAX_EVIDENCE_EXCEEDED",
+  "MAX_ITEM_PHOTOS_EXCEEDED",
 ]);
 
 const reissueTokenErrors = errorResponses([
