@@ -8,6 +8,7 @@ import {
   incidentsService,
   requiredPhotoTypes,
   MAX_EVIDENCE_PER_ITEM,
+  MAX_ITEM_PHOTOS,
 } from "./incidents.service";
 import { incidentErrors } from "./incidents.errors";
 
@@ -84,6 +85,7 @@ app.openapi(getFieldIngestRoute, async (c) => {
       baselinePhotos,
       requiredEvidenceTypes: guidance.requiredEvidenceTypes,
       attachedEvidenceCounts: guidance.attachedEvidenceCounts,
+      photoAllowance: guidance.photoAllowance,
       tokenExpiresAt: context.item.tokenExpiresAt.toISOString(),
     },
     200,
@@ -173,6 +175,22 @@ app.openapi(submitFieldEvidenceRoute, async (c) => {
     throw incidentErrors.maxEvidenceExceeded({
       limit: MAX_EVIDENCE_PER_ITEM,
       submitted: existingCount + body.photos.length,
+    });
+  }
+
+  // The PHOTO cap (D10). Every photo here is a photo by construction — the field
+  // submit accepts no documents — so the batch size itself is what is counted
+  // against the item's existing photos. Same rule the host attach enforces, so
+  // the field page's `photoAllowance` and this refusal cannot disagree.
+  const existingPhotos = await incidentsService.countActivePhotos(
+    db,
+    context.item.id,
+  );
+
+  if (existingPhotos + body.photos.length > MAX_ITEM_PHOTOS) {
+    throw incidentErrors.maxItemPhotosExceeded({
+      limit: MAX_ITEM_PHOTOS,
+      submitted: existingPhotos + body.photos.length,
     });
   }
 

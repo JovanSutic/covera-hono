@@ -94,6 +94,20 @@ they name.
 | D42 | The field read returns `requiredEvidenceTypes` and `attachedEvidenceCounts`, and `submitFieldEvidence` returns the item's actual status. | The prep doc's central ask — "the system needs to drive the user what needs to be provided" — was unanswered: the field page showed a bare file picker with no indication of which shots the item expects. Counts and type names only; a storage key here would hand an unauthenticated caller the bucket layout, which the field test asserts against the serialised body. V3: the submit response was a hardcoded `"photos_collected"` literal, correct only while one transition existed. | APPROVED |
 | D43 | Every route that can change a claim or its items runs through `resolveEditableIncident`, which refuses with `409 INCIDENT_NOT_EDITABLE` for a claim past `ready_to_file`. | The audit's D2 root cause. Claim `status` is never accepted from a client — it is server-owned — so an edit path with no state gate could mutate a claim the guest is already looking at in the Resolution Center. One helper rather than a check per handler, so the gate cannot be forgotten on a route added later. | APPROVED |
 
+### The additional-photo cap (D44–D46)
+
+The audit that produced D32–D43 left the photo rule open: the blueprint's `MAX_EVIDENCE_PER_ITEM`
+bounds an item's evidence as a whole, and nothing expressed the operator's "up to 4 photos per
+damaged asset". `src/docs/incidents-additional-photo.md` is the feature that added it; these rows
+are the decisions it landed, recorded here so the rule is found where the rest of the claim's
+decisions are.
+
+| ID | Decision | Rationale | Status |
+| --- | --- | --- | --- |
+| D44 | `MAX_ITEM_PHOTOS = 4` — at most four PHOTOS per item, independent of the item's type or the asset's `photo_proof_requirement`. Documents are counted only by `MAX_EVIDENCE_PER_ITEM`. | The operator's rule, and the reason it does not vary: the required shots (`damage` 2, `theft` 1) are what the cleaner is PROMPTED for, not a lower cap, so the ceiling is one number. Counting documents here would refuse a fifth photo on an item whose budget went on receipts. | APPROVED |
+| D45 | The allowance is DERIVED (`buildPhotoAllowance`) and served as `{ max, required, attached, remaining }` on every item payload and on the field ingest payload. Nothing is stored. | A counter column would be a second source of truth for a fact the evidence rows already hold, and it would drift the first time a photo was soft-deleted — the failure mode `recomputeItemStatus` was introduced to remove. Publishing the four numbers is what lets the client stop offering a fifth photo instead of discovering the limit from a 400. | APPROVED |
+| D46 | `MAX_ITEM_PHOTOS_EXCEEDED` (400) is a **separate** registry code from `MAX_EVIDENCE_EXCEEDED`, enforced at the two writes (the host attach and the field submit) and at neither mint. | The two limits are different numbers: telling a caller with 4 photos and 0 documents that it exceeded `MAX_EVIDENCE_EXCEEDED` would describe the 20-evidence rule and send it looking for the wrong one. Enforcement at the write follows D37's reasoning — the mint writes nothing, so a mint-only bound is bypassable one photo at a time. | APPROVED |
+
 ---
 
 ## Checklist — close every one of these before approval

@@ -31,6 +31,36 @@ export const IncidentEvidenceSchema = SelectClaimEvidenceSchema.extend({
 export const ClaimEvidenceSchema = IncidentEvidenceSchema;
 
 /**
+ * How many photos an item may hold, and how much room is left.
+ *
+ * DERIVED, never stored (`buildPhotoAllowance`): a counter column beside the
+ * evidence rows would be a second source of truth for the same fact and would
+ * drift the first time a photo was soft-deleted. `required` is what the cleaner
+ * is asked to shoot — advisory, not a floor the API enforces — so the client can
+ * show the outstanding shots without re-deriving the type mapping.
+ */
+export const PhotoAllowanceSchema = z
+  .object({
+    max: z.number().int().openapi({
+      description: "The most photos this item may hold.",
+      example: 4,
+    }),
+    required: z.number().int().openapi({
+      description: "How many shots this item's incident type asks for.",
+      example: 2,
+    }),
+    attached: z.number().int().openapi({
+      description: "How many photos the item currently holds.",
+      example: 1,
+    }),
+    remaining: z.number().int().openapi({
+      description: "How many more photos may be attached.",
+      example: 3,
+    }),
+  })
+  .openapi("PhotoAllowance");
+
+/**
  * One damaged or stolen asset, with its catalogue row and its evidence.
  *
  * Derived from the table schema via `omit`/`extend` rather than hand-written, so a
@@ -44,6 +74,7 @@ export const ClaimEvidenceSchema = IncidentEvidenceSchema;
 export const IncidentItemBaseSchema = SelectIncidentItemSchema.extend({
   asset: AssetSchema,
   evidence: z.array(IncidentEvidenceSchema),
+  photoAllowance: PhotoAllowanceSchema,
 });
 
 export const IncidentItemSchema = IncidentItemBaseSchema.omit({
@@ -415,6 +446,7 @@ export const FieldIngestSchema = z
      */
     requiredEvidenceTypes: z.array(z.string()),
     attachedEvidenceCounts: z.record(z.string(), z.number().int()),
+    photoAllowance: PhotoAllowanceSchema,
     tokenExpiresAt: z.string().datetime(),
   })
   .openapi("FieldIngest");
@@ -480,6 +512,7 @@ export type AttachEvidenceResponse = z.infer<
   typeof AttachEvidenceResponseSchema
 >;
 export type IncidentQuery = z.infer<typeof IncidentQuerySchema>;
+export type PhotoAllowance = z.infer<typeof PhotoAllowanceSchema>;
 export type PaginatedIncidents = z.infer<typeof PaginatedIncidentsSchema>;
 export type FieldAsset = z.infer<typeof FieldAssetSchema>;
 export type FieldIngest = z.infer<typeof FieldIngestSchema>;

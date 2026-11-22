@@ -37,6 +37,12 @@ const fieldSubmitErrors = errorResponses([
   ...VALIDATION,
   "FIELD_TOKEN_INVALID",
   "EVIDENCE_TYPE_MISMATCH",
+  // Named because the handler throws them: `check-contracts.ts` only requires
+  // the statuses a GUARD implies, so a handler-thrown 400 is otherwise invisible
+  // here and the document would omit failures the route really produces (D15).
+  "EVIDENCE_KEY_INVALID",
+  "MAX_EVIDENCE_EXCEEDED",
+  "MAX_ITEM_PHOTOS_EXCEEDED",
   "INTERNAL_SERVER_ERROR",
 ]);
 

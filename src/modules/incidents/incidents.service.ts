@@ -26,6 +26,7 @@ import {
   apartments,
   EVIDENCE_KIND,
   DOCUMENT_EVIDENCE_TYPES,
+  PHOTO_EVIDENCE_TYPES,
   type EvidenceKind,
   type IncidentItem as IncidentItemRow,
   Incident,
@@ -46,6 +47,7 @@ import type {
   PaginatedIncidents,
   UpdateIncident,
   UpdateIncidentItem,
+  PhotoAllowance,
 } from "./incidents.schema";
 
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
@@ -64,6 +66,22 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * INSERTs and therefore the one that enforces the real limit.
  */
 export const MAX_EVIDENCE_PER_ITEM = 20;
+
+/**
+ * The per-item PHOTO cap.
+ *
+ * The operator's rule: at most four photos per item, whatever the asset's
+ * requirement — a `damage` item needs two shots and may add two more, a `theft`
+ * item needs one and may add three. The required shots are the minimum the
+ * cleaner is prompted for, not a lower cap, which is why the ceiling does not
+ * vary by type.
+ *
+ * Counted separately from `MAX_EVIDENCE_PER_ITEM`, which bounds everything an
+ * item may carry and therefore cannot express "four photos" — and which must
+ * keep counting documents, so a receipt is never refused for a photo's sake
+ * (D3, D4).
+ */
+export const MAX_ITEM_PHOTOS = 4;
 
 /**
  * The claim states a host may still change. `submitted_to_guest` and anything
@@ -129,6 +147,36 @@ export const resolveTime = (
 };
 
 /**
+ * How many photos an item may hold, and how much room is left.
+ *
+ * One function for every surface: the host item payload, the field page and the
+ * two writes that enforce the cap all read this, so none of them can disagree
+ * about the same item's headroom — the failure mode being a client that offers
+ * a fifth photo the write then refuses (D6).
+ *
+ * `evidence` is expected to be the ACTIVE rows, as every caller already filters
+ * them through `activeEvidence`: a withdrawn photo must give its slot back
+ * (D7). The photo half comes from `EVIDENCE_KIND` via `evidenceKind`, the same
+ * map `recomputeItemStatus` trusts, so adding an enum member cannot leave this
+ * counting a stale list.
+ */
+export const buildPhotoAllowance = (
+  type: "damage" | "theft",
+  evidence: ReadonlyArray<Record<string, unknown>>,
+): PhotoAllowance => {
+  const attached = (
+    evidence as ReadonlyArray<{ evidenceType: string }>
+  ).filter((row) => evidenceKind(row.evidenceType) === "photo").length;
+
+  return {
+    max: MAX_ITEM_PHOTOS,
+    required: requiredPhotoTypes(type).length,
+    attached,
+    remaining: Math.max(0, MAX_ITEM_PHOTOS - attached),
+  };
+};
+
+/**
  * Adds the derived `kind` to an evidence row and renames nothing else.
  *
  * The split is computed here rather than read from a column because there is no
@@ -155,6 +203,7 @@ const hydrateIncident = (incident: any): IncidentWithItems => {
         ...row,
         asset: { ...(asset ?? {}), asset_type: asset?.assetType },
         evidence: activeEvidence(evidence),
+        photoAllowance: buildPhotoAllowance(row.type, activeEvidence(evidence)),
       };
     }),
   } as unknown as IncidentWithItems;
@@ -187,6 +236,7 @@ const hydrateItem = (item: any): Record<string, any> => {
     ...row,
     asset: { ...(asset ?? {}), asset_type: asset?.assetType },
     evidence: activeEvidence(evidence),
+    photoAllowance: buildPhotoAllowance(row.type, activeEvidence(evidence)),
   };
 };
 
@@ -476,6 +526,33 @@ export const incidentsService = {
   },
 
   /**
+   * How many PHOTOS the item currently holds, for the cap.
+   *
+   * The photo-only counterpart of `countActiveEvidence`, kept beside it so the
+   * two bounds an item has — all evidence, and photos — are read the same way.
+   * `PHOTO_EVIDENCE_TYPES` is derived from `EVIDENCE_KIND`, so this SQL test and
+   * `buildPhotoAllowance`'s filter agree by construction rather than by two
+   * lists happening to match (D3, D14).
+   */
+  async countActivePhotos(
+    db: Variables["db"],
+    itemId: string,
+  ): Promise<number> {
+    const [row] = await db
+      .select({ total: count() })
+      .from(claimEvidence)
+      .where(
+        and(
+          eq(claimEvidence.incidentItemId, itemId),
+          eq(claimEvidence.status, "active"),
+          inArray(claimEvidence.evidenceType, PHOTO_EVIDENCE_TYPES),
+        ),
+      );
+
+    return Number(row?.total ?? 0);
+  },
+
+  /**
    * Trigger A, entire (D8, D9). One method, because the two halves are the same
    * fact read twice — and two queries is how a host ends up shown "emergency" on
    * a claim the same route then refuses.
@@ -626,6 +703,7 @@ export const incidentsService = {
           ...item,
           asset: assetById.get(item.assetId),
           evidence: [],
+          photoAllowance: buildPhotoAllowance(item.type, []),
         })),
       } as unknown as CreateIncidentResponse;
     });
@@ -700,6 +778,7 @@ export const incidentsService = {
           ? { ...assetRow.asset, asset_type: assetRow.assetType }
           : undefined,
         evidence: [],
+        photoAllowance: buildPhotoAllowance(created.type, []),
       } as unknown as IncidentItemWithToken;
     });
   },
@@ -1045,6 +1124,7 @@ export const incidentsService = {
   ): Promise<{
     requiredEvidenceTypes: string[];
     attachedEvidenceCounts: Record<string, number>;
+    photoAllowance: PhotoAllowance;
   }> {
     const rows = await db
       .select({ evidenceType: claimEvidence.evidenceType })
@@ -1064,6 +1144,10 @@ export const incidentsService = {
     return {
       requiredEvidenceTypes: requiredPhotoTypes(itemType),
       attachedEvidenceCounts: counts,
+      // The same derived rule the host payload and the writes use, so the field
+      // page offers exactly as many photos as the submit will accept — three
+      // integers and a cap, which is safe on the unauthenticated surface (D9).
+      photoAllowance: buildPhotoAllowance(itemType, rows as Array<{ evidenceType: string }>),
     };
   },
 

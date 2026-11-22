@@ -115,6 +115,20 @@ export const incidentErrors = defineErrors(
         `You can attach at most ${ctx.limit} items of evidence per claim item, ` +
         `but ${ctx.submitted} were submitted. Remove some and try again.`,
     },
+    /**
+     * Distinct from `maxEvidenceExceeded`: that one bounds EVERYTHING an item may
+     * carry, this one bounds its PHOTOS. A caller with four photos and no receipt
+     * has not come near the evidence cap, so reporting it would send them looking
+     * for the wrong rule.
+     */
+    maxItemPhotosExceeded: {
+      status: 400 as const,
+      code: "MAX_ITEM_PHOTOS_EXCEEDED" as const,
+      description: "The per-item photo limit would be exceeded.",
+      message: (ctx: { limit: number; submitted: number }) =>
+        `You can have at most ${ctx.limit} photos on a claim item, but ${ctx.submitted} ` +
+        "would be on it. Remove one photo and try again.",
+    },
     itemNotFound: {
       status: 404 as const,
       code: "INCIDENT_ITEM_NOT_FOUND" as const,

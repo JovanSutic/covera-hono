@@ -42,13 +42,13 @@ is added first, then photos or documents are attached to it as proof.
 | 7 | PATCH | `/incidents/{id}/items/{itemId}` | `authGuard`, `rolesGuard(["admin","host"])`, ownership, editable | `200` `IncidentItem` | `401`; `403`; `404` `INCIDENT_NOT_FOUND` / `INCIDENT_ITEM_NOT_FOUND`; `409` `INCIDENT_NOT_EDITABLE` / `INCIDENT_ITEM_LOCKED` |
 | 8 | DELETE | `/incidents/{id}/items/{itemId}` | `authGuard`, `rolesGuard(["admin","host"])`, ownership, editable | `200` `DeleteIncidentItemResponse` | `401`; `403`; `404` `INCIDENT_NOT_FOUND` / `INCIDENT_ITEM_NOT_FOUND`; `409` `INCIDENT_NOT_EDITABLE` |
 | 9 | POST | `/incidents/{id}/items/{itemId}/upload-tokens` | `authGuard`, `rolesGuard(["admin","host"])`, ownership, editable | `200` `UploadTokensResponse` (images **and** PDFs) | `400` `VALIDATION_ERROR`; `401`; `403`; `404` `INCIDENT_NOT_FOUND` / `INCIDENT_ITEM_NOT_FOUND`; `409` `INCIDENT_NOT_EDITABLE` |
-| 10 | POST | `/incidents/{id}/items/{itemId}/evidence` | `authGuard`, `rolesGuard(["admin","host"])`, ownership, editable | `201` `AttachEvidenceResponse` | `400` `EVIDENCE_TYPE_MISMATCH` / `EVIDENCE_METADATA_INVALID` / `EVIDENCE_KEY_INVALID` / `MAX_EVIDENCE_EXCEEDED`; `401`; `403`; `404` `INCIDENT_NOT_FOUND` / `INCIDENT_ITEM_NOT_FOUND`; `409` `INCIDENT_NOT_EDITABLE` |
+| 10 | POST | `/incidents/{id}/items/{itemId}/evidence` | `authGuard`, `rolesGuard(["admin","host"])`, ownership, editable | `201` `AttachEvidenceResponse` | `400` `EVIDENCE_TYPE_MISMATCH` / `EVIDENCE_METADATA_INVALID` / `EVIDENCE_KEY_INVALID` / `MAX_EVIDENCE_EXCEEDED` / `MAX_ITEM_PHOTOS_EXCEEDED`; `401`; `403`; `404` `INCIDENT_NOT_FOUND` / `INCIDENT_ITEM_NOT_FOUND`; `409` `INCIDENT_NOT_EDITABLE` |
 | 11 | DELETE | `/incidents/{id}/items/{itemId}/evidence/{evidenceId}` | `authGuard`, `rolesGuard(["admin","host"])`, ownership, editable | `200` `DeleteEvidenceResponse` | `401`; `403`; `404` `INCIDENT_NOT_FOUND` / `INCIDENT_ITEM_NOT_FOUND` / `EVIDENCE_NOT_FOUND`; `409` `INCIDENT_NOT_EDITABLE` |
 | 12 | POST | `/incidents/{id}/items/{itemId}/reissue-token` | `authGuard`, `rolesGuard(["admin","host"])`, ownership, editable | `200` `IncidentItemWithToken` | `401`; `403`; `404` `INCIDENT_NOT_FOUND` / `INCIDENT_ITEM_NOT_FOUND`; `409` `INCIDENT_NOT_EDITABLE` / `INCIDENT_ITEM_LOCKED` |
 | 13 | POST | `/incidents/{id}/confirm-airbnb-filing` | `authGuard`, `rolesGuard(["admin","host"])`, ownership | `200` `Incident` with `submittedToGuest` status and both clock fields set | `401`; `403`; `404` `INCIDENT_NOT_FOUND`; `409` `INCIDENT_NOT_READY` / `INCIDENT_ALREADY_FILED` |
 | 14 | GET | `/field/ingest/{token}` | **none** — possession of the token is the credential | `200` `FieldIngest` | `404` `FIELD_TOKEN_INVALID` |
 | 15 | POST | `/field/ingest/{token}/upload-tokens` | **none** — token-gated | `200` `UploadTokensResponse` (images only) | `400` `VALIDATION_ERROR` / `MAX_EVIDENCE_EXCEEDED`; `404` `FIELD_TOKEN_INVALID` |
-| 16 | POST | `/field/ingest/{token}/submit` | **none** — token-gated | `200` `FieldSubmitResponse` | `400` `VALIDATION_ERROR` / `EVIDENCE_TYPE_MISMATCH` / `EVIDENCE_KEY_INVALID` / `MAX_EVIDENCE_EXCEEDED`; `404` `FIELD_TOKEN_INVALID` |
+| 16 | POST | `/field/ingest/{token}/submit` | **none** — token-gated | `200` `FieldSubmitResponse` | `400` `VALIDATION_ERROR` / `EVIDENCE_TYPE_MISMATCH` / `EVIDENCE_KEY_INVALID` / `MAX_EVIDENCE_EXCEEDED` / `MAX_ITEM_PHOTOS_EXCEEDED`; `404` `FIELD_TOKEN_INVALID` |
 
 `cleanerToken` appears in exactly three responses: `POST /incidents`, `POST /incidents/{id}/items`
 and `POST …/reissue-token` — the calls that mint it. Every read omits it, because the token is a
@@ -63,6 +63,12 @@ serialised body, not by prose.
 `FieldIngest` also carries `requiredEvidenceTypes` (which shots this item needs) and
 `attachedEvidenceCounts` (how many of each are already in), so the field page prompts for the
 missing shots instead of showing a bare file picker. Counts and type names only — no storage keys.
+
+`FieldIngest` also carries `photoAllowance` (`{ max, required, attached, remaining }`), and so does
+every `IncidentItem`. It is derived, never stored: `max` is `MAX_ITEM_PHOTOS` (4), `attached` counts
+the item's ACTIVE PHOTOS — documents do not spend it — and `required` is the advisory shot count for
+the item's type. The cap is enforced at the two writes, so a client reads `remaining` and stops
+offering photos rather than discovering the limit from a `400 MAX_ITEM_PHOTOS_EXCEEDED`.
 
 `GET /incidents` **requires** `apartmentId`. A claim is reached through its reservation's
 apartment, which is what ownership is asserted against, so an unscoped list would return every

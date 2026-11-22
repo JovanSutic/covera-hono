@@ -20,6 +20,7 @@ const {
   mockUpdateItem,
   mockDeleteItem,
   mockCountActiveEvidence,
+  mockCountActivePhotos,
   mockGenerateHostUploadTokens,
   mockAttachEvidence,
   mockGetItemWithAsset,
@@ -42,6 +43,7 @@ const {
   mockUpdateItem: vi.fn(),
   mockDeleteItem: vi.fn(),
   mockCountActiveEvidence: vi.fn(),
+  mockCountActivePhotos: vi.fn(),
   mockGenerateHostUploadTokens: vi.fn(),
   mockAttachEvidence: vi.fn(),
   mockGetItemWithAsset: vi.fn(),
@@ -76,6 +78,7 @@ vi.mock("./incidents.service", async () => {
       updateItem: mockUpdateItem,
       deleteItem: mockDeleteItem,
       countActiveEvidence: mockCountActiveEvidence,
+      countActivePhotos: mockCountActivePhotos,
       generateHostUploadTokens: mockGenerateHostUploadTokens,
       attachEvidence: mockAttachEvidence,
       getItemWithAsset: mockGetItemWithAsset,
@@ -191,6 +194,7 @@ const hydratedItem = (overrides: Record<string, unknown> = {}) => ({
   ...itemRow(),
   asset: hydratedAsset,
   evidence: [],
+  photoAllowance: { max: 4, required: 2, attached: 0, remaining: 4 },
   ...overrides,
 });
 
@@ -217,6 +221,7 @@ describe("Incidents routes", () => {
     });
     mockGetItem.mockResolvedValue(itemRow());
     mockCountActiveEvidence.mockResolvedValue(0);
+    mockCountActivePhotos.mockResolvedValue(0);
     mockGetItemWithAsset.mockResolvedValue(hydratedItem());
   });
 
@@ -639,6 +644,26 @@ describe("Incidents routes", () => {
       const data = await res.json();
       expect(data.id).toBe(INCIDENT_ID);
       expect(data.items).toEqual([]);
+    });
+
+    it("carries each item's photo allowance", async () => {
+      mockGetById.mockResolvedValue({
+        ...createdIncident,
+        items: [hydratedItem()],
+      });
+
+      const res = await testApp.request(`/incidents/${INCIDENT_ID}`, {
+        headers: AUTHED_HEADERS,
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.items[0].photoAllowance).toEqual({
+        max: 4,
+        required: 2,
+        attached: 0,
+        remaining: 4,
+      });
     });
 
     it("returns 404 INCIDENT_NOT_FOUND for an unknown claim", async () => {
@@ -1314,6 +1339,62 @@ describe("Incidents routes", () => {
       // 19 existing + 2 submitted, reported as the total that crossed the line.
       expect(payload.error.meta.submitted).toBe(21);
       expect(mockAttachEvidence).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The operator's rule: four photos per item. `MAX_ITEM_PHOTOS_EXCEEDED` is a
+     * distinct code from `MAX_EVIDENCE_EXCEEDED` because the two limits are
+     * different numbers — a client at 4 photos and 0 documents has not come near
+     * the 20-evidence cap, so being told about that one would send it looking
+     * for the wrong rule.
+     */
+    it("returns 400 MAX_ITEM_PHOTOS_EXCEEDED when a fifth photo would land", async () => {
+      mockGetById.mockResolvedValue(createdIncident);
+      mockCountActivePhotos.mockResolvedValue(4);
+
+      const res = await attach([
+        {
+          evidenceType: "damage_photo_wide",
+          storageKey: `incidents/${INCIDENT_ID}/${ITEM_ID}/fifth.jpg`,
+        },
+      ]);
+
+      const payload = await expectError(res, 400, "MAX_ITEM_PHOTOS_EXCEEDED");
+      expect(payload.error.meta.limit).toBe(4);
+      expect(payload.error.meta.submitted).toBe(5);
+      expect(mockAttachEvidence).not.toHaveBeenCalled();
+    });
+
+    it("allows a photo attach that lands exactly on the photo limit", async () => {
+      mockGetById.mockResolvedValue(createdIncident);
+      mockCountActivePhotos.mockResolvedValue(3);
+      mockAttachEvidence.mockResolvedValue({ attachedCount: 1, itemStatus: "photos_collected" });
+
+      const res = await attach([
+        {
+          evidenceType: "damage_photo_closeup",
+          storageKey: `incidents/${INCIDENT_ID}/${ITEM_ID}/fourth.jpg`,
+        },
+      ]);
+
+      expect(res.status).toBe(201);
+    });
+
+    /**
+     * D3: the photo cap counts photos. A document does not spend it, so an item
+     * whose four photos are in can still file its valuation — and a receipt is
+     * never refused because the photo budget is gone.
+     */
+    it("does not count documents against the photo limit", async () => {
+      mockGetById.mockResolvedValue(createdIncident);
+      mockCountActivePhotos.mockResolvedValue(4);
+      mockAttachEvidence.mockResolvedValue({ attachedCount: 1, itemStatus: "complete" });
+
+      const res = await attach([
+        { evidenceType: "original_purchase_receipt", storageKey: key },
+      ]);
+
+      expect(res.status).toBe(201);
     });
 
     it("returns 404 INCIDENT_ITEM_NOT_FOUND for an item on another claim", async () => {
