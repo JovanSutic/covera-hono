@@ -51,6 +51,8 @@ const EXPECTED_STATUS: Record<ErrorCode, number> = {
   // 403
   FORBIDDEN_ROLE: 403,
   FORBIDDEN_APARTMENT_ACCESS: 403,
+  SPECIAL_ACCESS_INVALID: 403,
+  SPECIAL_ACCESS_SCOPE_MISMATCH: 403,
   // 404
   ROUTE_NOT_FOUND: 404,
   APARTMENT_NOT_FOUND: 404,
@@ -65,6 +67,7 @@ const EXPECTED_STATUS: Record<ErrorCode, number> = {
   INCIDENT_ITEM_NOT_FOUND: 404,
   EVIDENCE_NOT_FOUND: 404,
   FIELD_TOKEN_INVALID: 404,
+  SPECIAL_ACCESS_NOT_FOUND: 404,
   // 409
   RESERVATION_OVERLAP: 409,
   INSPECTION_ALREADY_EXISTS: 409,
@@ -102,6 +105,33 @@ describe("error registry", () => {
     const status = ERROR_REGISTRY[code].status;
     expect(Number.isInteger(status)).toBe(true);
     expect(status).toBe(EXPECTED_STATUS[code]);
+  });
+
+  describe("special access codes", () => {
+    const SPECIAL_ACCESS_CODES = [
+      "SPECIAL_ACCESS_INVALID",
+      "SPECIAL_ACCESS_SCOPE_MISMATCH",
+      "SPECIAL_ACCESS_NOT_FOUND",
+    ] as const;
+
+    // Invariant 7: these codes describe the caller's credential and nothing
+    // about the resource. A description echoing the token or a reservation id
+    // would turn a 403 into a resource-existence oracle.
+    it("names no id, target, or token in any special-access description", () => {
+      for (const code of SPECIAL_ACCESS_CODES) {
+        const description = ERROR_REGISTRY[code].description;
+        expect(description).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/i);
+        expect(description).not.toMatch(/accessId|access_id/i);
+      }
+    });
+
+    // D8, written out so a later status flip is a reviewable diff rather than a
+    // silent client-facing break.
+    it("keeps token failures on 403 and grant lookups on 404", () => {
+      expect(ERROR_REGISTRY.SPECIAL_ACCESS_INVALID.status).toBe(403);
+      expect(ERROR_REGISTRY.SPECIAL_ACCESS_SCOPE_MISMATCH.status).toBe(403);
+      expect(ERROR_REGISTRY.SPECIAL_ACCESS_NOT_FOUND.status).toBe(404);
+    });
   });
 
   it("expects a status for every registered code, and no others", () => {
