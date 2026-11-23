@@ -81,7 +81,7 @@ async function resolveOwnedIncident(c: any, id: string) {
     allowAdmin: true,
   });
 
-  return { db, incident };
+  return { db, incident, reservation };
 }
 
 /**
@@ -109,7 +109,7 @@ async function resolveEditableIncident(c: any, id: string) {
  * another claim is a 404 rather than a way to reach across claims.
  */
 async function requireItem(c: any, incidentId: string, itemId: string) {
-  const { db, incident } = await resolveEditableIncident(c, incidentId);
+  const { db, incident, reservation } = await resolveEditableIncident(c, incidentId);
 
   const item = await incidentsService.getItem(db, incidentId, itemId);
 
@@ -117,7 +117,7 @@ async function requireItem(c: any, incidentId: string, itemId: string) {
     throw incidentErrors.itemNotFound({ itemId });
   }
 
-  return { db, incident, item };
+  return { db, incident, item, reservation };
 }
 
 /**
@@ -256,6 +256,8 @@ app.openapi(createIncidentRoute, async (c) => {
   const created = await incidentsService.create(db, body, {
     effectiveCheckOut,
     isEmergencyMode: feasibility.isEmergency,
+    apartmentId: reservation.apartmentId,
+    createdBy: user.id,
   });
 
   return c.json(created, 201);
@@ -346,7 +348,17 @@ app.openapi(addIncidentItemRoute, async (c) => {
     throw incidentErrors.assetNotInApartment({ assetId: body.assetId });
   }
 
-  const created = await incidentsService.addItem(db, id, body);
+  const user = c.get("user");
+
+  if (!user) {
+    throw incidentErrors.unauthenticated();
+  }
+
+  const created = await incidentsService.addItem(db, id, body, {
+    apartmentId: reservation.apartmentId,
+    reservationId: reservation.id,
+    createdBy: user.id,
+  });
 
   if (!created) {
     throw incidentErrors.itemExists({ assetId: body.assetId });
@@ -539,7 +551,12 @@ app.openapi(deleteEvidenceRoute, async (c) => {
 app.openapi(reissueItemTokenRoute, async (c) => {
   const { id, itemId } = c.req.valid("param");
 
-  const { db } = await requireItem(c, id, itemId);
+  const { db, reservation } = await requireItem(c, id, itemId);
+  const user = c.get("user");
+
+  if (!user) {
+    throw incidentErrors.unauthenticated();
+  }
 
   const activeCount = await incidentsService.countActiveEvidence(db, itemId);
 
@@ -550,7 +567,11 @@ app.openapi(reissueItemTokenRoute, async (c) => {
     throw incidentErrors.itemAlreadyCollected({ itemId });
   }
 
-  const reissued = await incidentsService.reissueToken(db, id, itemId);
+  const reissued = await incidentsService.reissueToken(db, id, itemId, {
+    apartmentId: reservation.apartmentId,
+    reservationId: reservation.id,
+    createdBy: user.id,
+  });
 
   if (!reissued) {
     throw incidentErrors.itemNotFound({ itemId });
