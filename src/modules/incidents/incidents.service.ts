@@ -7,6 +7,7 @@ import {
   exists,
   gt,
   inArray,
+  isNull,
   lt,
   ne,
   notExists,
@@ -24,6 +25,7 @@ import {
   assetTypes,
   apartmentImages,
   apartments,
+  specialAccess,
   EVIDENCE_KIND,
   DOCUMENT_EVIDENCE_TYPES,
   PHOTO_EVIDENCE_TYPES,
@@ -129,6 +131,43 @@ export const evidenceKind = (type: string): EvidenceKind =>
  * constraint failure rather than a silent overwrite.
  */
 export const makeToken = (): string => crypto.randomUUID().replace(/-/g, "");
+
+/**
+ * The `special_access` twin of a field token (D18).
+ *
+ * The token is the SAME string as `incident_items.cleaner_token`, so the two
+ * tables describe one credential during the migration window: `getFieldContext`
+ * reads the grant, and the item column stays the revert path. Written inside the
+ * caller's transaction so a grant can never exist for an item that failed to
+ * insert, or vice versa.
+ *
+ * `expiresAt` is passed rather than recomputed, so the grant's window and the
+ * item's `token_expires_at` cannot drift by a few milliseconds.
+ *
+ * `apartmentId` is passed rather than joined here: every caller already holds the
+ * reservation, and a second query per mint would be paid on the hot create path.
+ */
+const insertFieldGrant = async (
+  tx: any,
+  params: {
+    token: string;
+    expiresAt: Date;
+    apartmentId: string;
+    reservationId: string;
+    incidentItemId: string;
+    createdBy: string | null;
+  },
+) => {
+  await tx.insert(specialAccess).values({
+    accessId: params.token,
+    scope: "damage_evidence",
+    apartmentId: params.apartmentId,
+    reservationId: params.reservationId,
+    incidentItemId: params.incidentItemId,
+    expiresAt: params.expiresAt,
+    createdBy: params.createdBy,
+  });
+};
 
 /**
  * The reservation time-resolution rule the rest of the repo already uses
@@ -315,6 +354,16 @@ const recomputeItemStatus = async (tx: any, itemId: string): Promise<string> => 
       updatedAt: new Date(),
     })
     .where(eq(incidentItems.id, itemId));
+
+  // The grant is burned with the column, and only with it (D18): an item wiped
+  // back to `link_generated` keeps a usable link on BOTH sides, so reissuing
+  // replaces a dead grant rather than colliding with a live one.
+  if (status !== "link_generated") {
+    await tx
+      .update(specialAccess)
+      .set({ usedAt: new Date() })
+      .where(eq(specialAccess.incidentItemId, itemId));
+  }
 
   return status;
 };
@@ -632,9 +681,14 @@ export const incidentsService = {
   async create(
     db: Variables["db"],
     data: CreateIncident,
-    context: { effectiveCheckOut: Date; isEmergencyMode: boolean },
+    context: {
+      effectiveCheckOut: Date;
+      isEmergencyMode: boolean;
+      apartmentId: string;
+      createdBy: string | null;
+    },
   ): Promise<CreateIncidentResponse> {
-    const { effectiveCheckOut, isEmergencyMode } = context;
+    const { effectiveCheckOut, isEmergencyMode, apartmentId, createdBy } = context;
     const tokenExpiresAt = new Date(Date.now() + TOKEN_TTL_MS);
 
     return db.transaction(async (tx) => {
@@ -663,21 +717,39 @@ export const incidentsService = {
         } as unknown as CreateIncidentResponse;
       }
 
+      const itemsWithTokens = data.items.map((item) => {
+        const token = makeToken();
+        return { item, token, tokenExpiresAt };
+      });
+
       const insertedItems = await tx
         .insert(incidentItems)
         .values(
-          data.items.map((item) => ({
+          itemsWithTokens.map(({ item, token }) => ({
             incidentId: incident.id,
             assetId: item.assetId,
             type: item.type,
             status: "link_generated" as const,
-            cleanerToken: makeToken(),
+            cleanerToken: token,
             tokenExpiresAt,
-            estimatedPlaceholderValueCents:
-              item.estimatedPlaceholderValueCents ?? 0,
+            estimatedPlaceholderValueCents: item.estimatedPlaceholderValueCents ?? 0,
           })),
         )
         .returning();
+
+      // The mirror, after the items exist so `id` is available. Same transaction:
+      // an item without its grant would make the field link dead the moment the
+      // read moves to `special_access`.
+      for (let i = 0; i < insertedItems.length; i++) {
+        await insertFieldGrant(tx, {
+          token: itemsWithTokens[i]!.token,
+          expiresAt: tokenExpiresAt,
+          apartmentId,
+          reservationId: data.reservationId,
+          incidentItemId: insertedItems[i]!.id,
+          createdBy,
+        });
+      }
 
       const assetRows = await tx
         .select({ asset: assets, assetType: assetTypes })
@@ -728,6 +800,7 @@ export const incidentsService = {
       type: "damage" | "theft";
       estimatedPlaceholderValueCents?: number;
     },
+    context: { apartmentId: string; reservationId: string; createdBy: string | null },
   ): Promise<IncidentItemWithToken | null> {
     const tokenExpiresAt = new Date(Date.now() + TOKEN_TTL_MS);
 
@@ -758,6 +831,15 @@ export const incidentsService = {
             item.estimatedPlaceholderValueCents ?? 0,
         })
         .returning();
+
+      await insertFieldGrant(tx, {
+        token: created.cleanerToken,
+        expiresAt: created.tokenExpiresAt,
+        apartmentId: context.apartmentId,
+        reservationId: context.reservationId,
+        incidentItemId: created.id,
+        createdBy: context.createdBy,
+      });
 
       const [assetRow] = await tx
         .select({ asset: assets, assetType: assetTypes })
@@ -884,22 +966,42 @@ export const incidentsService = {
     db: Variables["db"],
     incidentId: string,
     itemId: string,
+    context: { apartmentId: string; reservationId: string; createdBy: string | null },
   ): Promise<IncidentItemWithToken | null> {
-    const [updated] = await db
-      .update(incidentItems)
-      .set({
-        cleanerToken: makeToken(),
-        tokenExpiresAt: new Date(Date.now() + TOKEN_TTL_MS),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(incidentItems.id, itemId),
-          eq(incidentItems.incidentId, incidentId),
-          eq(incidentItems.status, "link_generated"),
-        ),
-      )
-      .returning();
+    const token = makeToken();
+    const expiresAt = new Date(Date.now() + TOKEN_TTL_MS);
+
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(incidentItems)
+        .set({ cleanerToken: token, tokenExpiresAt: expiresAt, updatedAt: new Date() })
+        .where(
+          and(
+            eq(incidentItems.id, itemId),
+            eq(incidentItems.incidentId, incidentId),
+            eq(incidentItems.status, "link_generated"),
+          ),
+        )
+        .returning();
+
+      if (!row) return null;
+
+      // Replace, never add a second live grant for this item: the superseded
+      // token must stop working in the same write that mints the new one, which
+      // is the guarantee `cleaner_token`'s UNIQUE column gives today.
+      await tx.delete(specialAccess).where(eq(specialAccess.incidentItemId, itemId));
+
+      await insertFieldGrant(tx, {
+        token,
+        expiresAt,
+        apartmentId: context.apartmentId,
+        reservationId: context.reservationId,
+        incidentItemId: itemId,
+        createdBy: context.createdBy,
+      });
+
+      return row;
+    });
 
     if (!updated) return null;
 
@@ -1043,7 +1145,7 @@ export const incidentsService = {
         itemId: incidentItems.id,
         itemType: incidentItems.type,
         itemStatus: incidentItems.status,
-        tokenExpiresAt: incidentItems.tokenExpiresAt,
+        tokenExpiresAt: specialAccess.expiresAt,
         incidentId: incidents.id,
         apartmentId: apartments.id,
         apartmentName: apartments.name,
@@ -1051,11 +1153,19 @@ export const incidentsService = {
         checkOutDatetime: reservations.checkOutDatetime,
         alternativeCheckOutDatetime: reservations.alternativeCheckOutDatetime,
       })
-      .from(incidentItems)
+      .from(specialAccess)
+      .innerJoin(incidentItems, eq(specialAccess.incidentItemId, incidentItems.id))
       .innerJoin(incidents, eq(incidentItems.incidentId, incidents.id))
       .innerJoin(reservations, eq(incidents.reservationId, reservations.id))
       .innerJoin(apartments, eq(reservations.apartmentId, apartments.id))
-      .where(eq(incidentItems.cleanerToken, token))
+      .where(
+        and(
+          eq(specialAccess.accessId, token),
+          eq(specialAccess.scope, "damage_evidence"),
+          isNull(specialAccess.revokedAt),
+          isNull(specialAccess.usedAt),
+        ),
+      )
       .limit(1);
 
     if (!row) return null;

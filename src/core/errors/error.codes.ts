@@ -43,6 +43,8 @@ export const ERROR_REGISTRY = {
   // ---- 403 -----------------------------------------------------------------
   FORBIDDEN_ROLE:              { status: 403, description: "The caller's role cannot access this endpoint." },
   FORBIDDEN_APARTMENT_ACCESS:  { status: 403, description: "The caller does not own this apartment." },
+  SPECIAL_ACCESS_INVALID:        { status: 403, description: "The access link is not valid, has expired, or has been revoked." },
+  SPECIAL_ACCESS_SCOPE_MISMATCH: { status: 403, description: "The access link does not cover this resource." },
 
   // ---- 404 -----------------------------------------------------------------
   ROUTE_NOT_FOUND:      { status: 404, description: "The requested route does not exist." },
@@ -58,6 +60,7 @@ export const ERROR_REGISTRY = {
   INCIDENT_ITEM_NOT_FOUND: { status: 404, description: "Incident item does not exist." },
   EVIDENCE_NOT_FOUND:   { status: 404, description: "Evidence does not exist." },
   FIELD_TOKEN_INVALID:  { status: 404, description: "The field link is not valid, has expired, or has already been used." },
+  SPECIAL_ACCESS_NOT_FOUND: { status: 404, description: "The access grant does not exist." },
 
   // ---- 409 -----------------------------------------------------------------
   RESERVATION_OVERLAP:      { status: 409, description: "Reservation overlaps an existing reservation." },

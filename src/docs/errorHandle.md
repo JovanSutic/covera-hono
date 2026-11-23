@@ -286,8 +286,8 @@ export class ConflictException extends AppError { constructor(o: AppErrorOptions
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | 400    | `VALIDATION_ERROR`, `INVALID_DATETIME`, `INVALID_IDENTIFIER`, `MISSING_REQUIRED_FIELD`, `CONSTRAINT_VIOLATION`, `RESERVATION_NOT_COVERED`, `RESERVATION_WINDOW_EXPIRED`, `INSPECTION_WINDOW_EXPIRED`, `INSPECTION_NO_PHOTO_PROOF` |
 | 401    | `AUTH_TOKEN_MISSING`, `AUTH_TOKEN_INVALID`, `AUTH_SESSION_EXPIRED`                                                                           |
-| 403    | `FORBIDDEN_ROLE`, `FORBIDDEN_APARTMENT_ACCESS`                                                                                              |
-| 404    | `ROUTE_NOT_FOUND`, `APARTMENT_NOT_FOUND`, `RESERVATION_NOT_FOUND`, `INSPECTION_NOT_FOUND`, `ASSET_NOT_FOUND`, `ASSET_TYPE_NOT_FOUND`, `LOCATION_NOT_FOUND`, `USER_NOT_FOUND`, `FLAG_NOT_FOUND` |
+| 403    | `FORBIDDEN_ROLE`, `FORBIDDEN_APARTMENT_ACCESS`, `SPECIAL_ACCESS_INVALID`, `SPECIAL_ACCESS_SCOPE_MISMATCH`                                     |
+| 404    | `ROUTE_NOT_FOUND`, `APARTMENT_NOT_FOUND`, `RESERVATION_NOT_FOUND`, `INSPECTION_NOT_FOUND`, `ASSET_NOT_FOUND`, `ASSET_TYPE_NOT_FOUND`, `LOCATION_NOT_FOUND`, `USER_NOT_FOUND`, `FLAG_NOT_FOUND`, `SPECIAL_ACCESS_NOT_FOUND` |
 | 409    | `RESERVATION_OVERLAP`, `INSPECTION_ALREADY_EXISTS`, `FLAG_ALREADY_EXISTS`, `ASSET_LOCKED`, `APARTMENT_SHOTS_LOCKED`, `DUPLICATE_RECORD`, `RELATED_RECORD_INVALID` |
 | 500    | `INTERNAL_SERVER_ERROR`                                                                                                                     |
 
@@ -466,3 +466,18 @@ Error handling is only consistent if it is asserted.
 | `test-factory.ts:26,34`                              | Test-only envelope (`{ message: "Validation Error" }`) diverges from production             | Import shared renderer (§3)                                  |
 | `assets.test.ts:89`, `apartment_shots.test.ts:122`   | Local `onError` overrides with a different shape                                            | Delete; use `createTestApp` + real renderer                   |
 | `error.schema.ts`                                    | No `meta` field; `details` requires `field`/`message` but response others never populate it | Add `meta`, document when `details` applies (§1)              |
+
+---
+
+## 12. Token failures reuse 403, not 404
+
+`src/docs/special-access.decisions.md` D8. Every other token-only surface in this API — the
+`/field/ingest` link — answers `404 FIELD_TOKEN_INVALID`, because there the token *is* the whole
+path and a 404 therefore confirms nothing about any other resource.
+
+The `?accessId=` routes are different: their path already names a real resource id. Answering 404
+for a bad token there would make "this link has expired" indistinguishable from "this reservation
+no longer exists" — two conditions with different remedies. They answer **403** instead, which is
+also what `roleGuard` already answers for "your credential does not open this". That is safe only
+because the token is validated *before* the target is resolved (D9), so the response is a statement
+about the caller's own credential and nothing else.

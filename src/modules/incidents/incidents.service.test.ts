@@ -34,6 +34,8 @@ const INCIDENT_ID = "880e8400-e29b-41d4-a716-446655440000";
 const ITEM_ID = "aa0e8400-e29b-41d4-a716-446655440000";
 const EVIDENCE_ID = "bb0e8400-e29b-41d4-a716-446655440000";
 const ASSET_ID = "990e8400-e29b-41d4-a716-446655440000";
+const APARTMENT_ID = "660e8400-e29b-41d4-a716-446655440000";
+const RESERVATION_ID = "770e8400-e29b-41d4-a716-446655440000";
 
 type Op = "select" | "insert" | "update" | "delete";
 type Recorded = { op: Op; values?: unknown; set?: unknown };
@@ -385,9 +387,9 @@ describe("submitFieldEvidence", () => {
   const onePhoto = () =>
     fakeDb({
       selects: [[{ evidenceType: "damage_photo_wide" }]],
-      // insert, the cleaner's description, the derived status, then the two
-      // readiness statements.
-      mutates: [[], [], [], [], []],
+      // insert, the cleaner's description, the derived status, the grant burn,
+      // then the two readiness statements.
+      mutates: [[], [], [], [], [], []],
     });
 
   /**
@@ -403,7 +405,9 @@ describe("submitFieldEvidence", () => {
     expect(f.transactions).toBe(1);
     expect(result).toEqual({ itemStatus: "photos_collected", evidenceCount: 1 });
     expect(f.ops("insert")).toHaveLength(1);
-    expect(f.ops("update")).toHaveLength(4);
+    // The grant burn is one more update than the burn alone: the item's status,
+    // the grant's `used_at`, and the two readiness statements.
+    expect(f.ops("update")).toHaveLength(5);
   });
 
   it("writes the EXIF fields and the cleaner's description", async () => {
@@ -509,7 +513,7 @@ describe("attachEvidence", () => {
   it("carries a photo's EXIF through", async () => {
     const f = fakeDb({
       selects: [[{ evidenceType: "damage_photo_wide" }]],
-      mutates: [[], [], [], []],
+      mutates: [[], [], [], [], []],
     });
 
     await incidentsService.attachEvidence(f.db, context, {
@@ -541,7 +545,7 @@ describe("attachEvidence", () => {
           { evidenceType: "handyman_invoice" },
         ],
       ],
-      mutates: [[], [], [], []],
+      mutates: [[], [], [], [], []],
     });
 
     const result = await incidentsService.attachEvidence(f.db, context, {
@@ -577,7 +581,7 @@ describe("attachEvidence", () => {
           { evidenceType: "original_purchase_receipt" },
         ],
       ],
-      mutates: [[], [], [], []],
+      mutates: [[], [], [], [], []],
     });
 
     const result = await incidentsService.attachEvidence(f.db, context, {
@@ -591,8 +595,9 @@ describe("attachEvidence", () => {
 
     expect(result.itemStatus).toBe("complete");
     // The description never applies here, unlike the field submit: attach has no
-    // cleaner text. Insert + derived status + both readiness statements.
-    expect(f.ops("update")).toHaveLength(3);
+    // cleaner text. Insert + derived status + the grant burn + both readiness
+    // statements.
+    expect(f.ops("update")).toHaveLength(4);
   });
 
   /**
@@ -672,7 +677,7 @@ describe("deleteEvidence", () => {
   it("keeps an item at photos_collected while a photo remains", async () => {
     const f = fakeDb({
       selects: [[{ evidenceType: "damage_photo_wide" }]],
-      mutates: [[{ id: EVIDENCE_ID }], [], [], []],
+      mutates: [[{ id: EVIDENCE_ID }], [], [], [], []],
     });
 
     const result = await incidentsService.deleteEvidence(f.db, context);
@@ -720,14 +725,21 @@ describe("item writes", () => {
     const f = fakeDb({
       // The duplicate check finds nothing, then the asset read, then the sum.
       selects: [[], [assetRow], [{ total: 5000 }]],
-      mutates: [[created], [], [], []],
+      // The item insert, then the grant insert, then the total and both
+      // readiness statements.
+      mutates: [[created], [], [], [], []],
     });
 
-    const item = await incidentsService.addItem(f.db, INCIDENT_ID, {
-      assetId: ASSET_ID,
-      type: "damage",
-      estimatedPlaceholderValueCents: 5000,
-    });
+    const item = await incidentsService.addItem(
+      f.db,
+      INCIDENT_ID,
+      {
+        assetId: ASSET_ID,
+        type: "damage",
+        estimatedPlaceholderValueCents: 5000,
+      },
+      { apartmentId: APARTMENT_ID, reservationId: RESERVATION_ID, createdBy: null },
+    );
 
     expect(item!.cleanerToken).toMatch(/^[0-9a-f]{32}$/);
     expect(item!.asset).toMatchObject({
@@ -758,10 +770,15 @@ describe("item writes", () => {
   it("refuses a duplicate asset without inserting", async () => {
     const f = fakeDb({ selects: [[{ id: "existing-item" }]] });
 
-    const item = await incidentsService.addItem(f.db, INCIDENT_ID, {
-      assetId: ASSET_ID,
-      type: "damage",
-    });
+    const item = await incidentsService.addItem(
+      f.db,
+      INCIDENT_ID,
+      {
+        assetId: ASSET_ID,
+        type: "damage",
+      },
+      { apartmentId: APARTMENT_ID, reservationId: RESERVATION_ID, createdBy: null },
+    );
 
     expect(item).toBeNull();
     expect(f.ops("insert")).toHaveLength(0);
@@ -841,11 +858,16 @@ describe("reissueToken", () => {
         captured.where = w;
         return chain;
       },
+      values: () => chain,
       returning: () => Promise.resolve(rows),
+      update: () => chain,
+      delete: () => chain,
+      insert: () => chain,
     };
 
     const db: any = {
       update: () => chain,
+      transaction: (fn: (t: unknown) => Promise<unknown>) => fn(chain),
       query: { incidentItems: { findFirst: async () => hydrated } },
     };
 
@@ -859,7 +881,11 @@ describe("reissueToken", () => {
     );
     const before = Date.now();
 
-    const item = await incidentsService.reissueToken(db, INCIDENT_ID, ITEM_ID);
+    const item = await incidentsService.reissueToken(db, INCIDENT_ID, ITEM_ID, {
+      apartmentId: APARTMENT_ID,
+      reservationId: RESERVATION_ID,
+      createdBy: null,
+    });
 
     // One of the only two payloads allowed to carry the token (D11).
     expect(item!.cleanerToken).toBe("fresh");
@@ -883,7 +909,11 @@ describe("reissueToken", () => {
     const { db } = reissueDb([], null);
 
     await expect(
-      incidentsService.reissueToken(db, INCIDENT_ID, ITEM_ID),
+      incidentsService.reissueToken(db, INCIDENT_ID, ITEM_ID, {
+        apartmentId: APARTMENT_ID,
+        reservationId: RESERVATION_ID,
+        createdBy: null,
+      }),
     ).resolves.toBeNull();
   });
 });
@@ -1121,5 +1151,63 @@ describe("constants", () => {
    */
   it("caps an item's photos at four", () => {
     expect(MAX_ITEM_PHOTOS).toBe(4);
+  });
+});
+
+describe("field grants mirror the item token — D18", () => {
+  it("inserts a damage_evidence grant carrying the same token it writes on the item", async () => {
+    const inserted: Array<Record<string, unknown>> = [];
+    let lastValues: unknown;
+
+    // A tx stub that records every insert payload and, like Postgres, echoes the
+    // STORED row back from `returning()` — so `created.cleanerToken` is the token
+    // that was actually written. Answering a bare fixture here instead would let
+    // the grant and the item carry different tokens and still pass.
+    const tx: any = {
+      select: () => tx,
+      from: () => tx,
+      innerJoin: () => tx,
+      where: () => tx,
+      limit: () => tx,
+      orderBy: () => tx,
+      insert: () => tx,
+      values: (v: unknown) => {
+        inserted.push(v as Record<string, unknown>);
+        lastValues = v;
+        return tx;
+      },
+      returning: () =>
+        Promise.resolve(
+          Array.isArray(lastValues)
+            ? (lastValues as object[]).map((row) => ({ id: ITEM_ID, ...row }))
+            : [{ id: ITEM_ID, ...(lastValues as object) }],
+        ),
+      update: () => tx,
+      set: () => tx,
+      delete: () => tx,
+      // Every plain `await` in `addItem` (the duplicate check, the asset lookup,
+      // the two readiness updates) resolves empty, which is what makes the happy
+      // path run to the end.
+      then: (res: any, rej: any) => Promise.resolve([]).then(res, rej),
+    };
+
+    const db: any = { ...tx, transaction: (fn: any) => fn(tx) };
+
+    await incidentsService.addItem(
+      db,
+      INCIDENT_ID,
+      { assetId: ASSET_ID, type: "damage" },
+      { apartmentId: APARTMENT_ID, reservationId: RESERVATION_ID, createdBy: null },
+    );
+
+    const grant = inserted.find((row) => row.scope === "damage_evidence");
+    const item = inserted.find((row) => "cleanerToken" in row);
+
+    expect(grant).toBeDefined();
+    expect(item).toBeDefined();
+    // The two tables describe ONE credential; a drifting pair is two credentials,
+    // and the item one is the one nothing reads any more.
+    expect(grant!.accessId).toBe(item!.cleanerToken);
+    expect(grant!.incidentItemId).toBe(ITEM_ID);
   });
 });

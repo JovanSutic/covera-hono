@@ -15,6 +15,7 @@ import { authGuard } from "@/middleware/authGuard";
 import { errorResponses, AUTHED, ROLE, APARTMENT_SCOPED, VALIDATION } from "@/core/errors/error.responses";
 import { rolesGuard } from "@/middleware/roleGuard";
 import { apartmentGuard } from "@/middleware/apartmentGuard";
+import { specialAccessGuard } from "@/middleware/specialAccessGuard";
 
 const getReservationsByApartmentErrors = errorResponses([
   ...AUTHED,
@@ -64,7 +65,13 @@ export const getReservationPhotosRoute = createRoute({
   method: "get",
   path: "/{id}/photos",
   tags: ["Reservations"],
-  middleware: [authGuard, rolesGuard(["admin", "host"])] as const,
+  middleware: [
+    specialAccessGuard({
+      scope: "inspection_proof",
+      bind: { kind: "reservationParam", param: "id" },
+      roles: ["admin", "host"],
+    }),
+  ] as const,
   request: {
     params: ReservationParamSchema,
   },
@@ -111,7 +118,13 @@ export const getReservationByIdRoute = createRoute({
   method: "get",
   path: "/{id}",
   tags: ["Reservations"],
-  middleware: [authGuard, rolesGuard(["admin", "host"])] as const,
+  middleware: [
+    specialAccessGuard({
+      scope: "inspection_proof",
+      bind: { kind: "reservationParam", param: "id" },
+      roles: ["admin", "host"],
+    }),
+  ] as const,
   request: {
     params: ReservationParamSchema,
   },

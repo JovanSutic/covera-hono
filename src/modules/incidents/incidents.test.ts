@@ -860,6 +860,7 @@ describe("Incidents routes", () => {
         expect.any(Object),
         INCIDENT_ID,
         body,
+        expect.any(Object),
       );
     });
 

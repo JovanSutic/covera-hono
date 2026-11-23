@@ -3,6 +3,7 @@ import { createTestApp } from "@/core/utils/test-factory";
 import inspectionsApp from "./inspections.route";
 import { usersService } from "../users/users.service";
 import { inspectionErrors } from "./inspections.errors";
+import { specialAccessService } from "../special_access/special_access.service";
 
 const {
   mockGetById,
@@ -40,6 +41,13 @@ vi.mock("../users/users.service", () => ({
 const mockedUserService = usersService as unknown as {
   getByAuthId: ReturnType<typeof vi.fn>;
 };
+
+vi.mock("../special_access/special_access.service", () => ({
+  specialAccessService: {
+    resolveByToken: vi.fn(),
+    resolveApartmentOwner: vi.fn(),
+  },
+}));
 
 vi.mock("@/core/utils/db-validator", () => ({
   checkExistence: mockCheckExistence,
@@ -362,5 +370,52 @@ describe("Inspections routes", () => {
 
       expect(res.status).toBe(404);
     });
+  });
+});
+
+describe("inspection routes accept a special access token — D5, D11", () => {
+  const RES_ID = "770e8400-e29b-41d4-a716-446655440000";
+  const APT_ID = "660e8400-e29b-41d4-a716-446655440000";
+  const OWNER_ROW = {
+    id: "550e8400-e29b-41d4-a716-446655440000",
+    authId: "550e8400-e29b-41d4-a716-446655440000",
+    role: "host",
+    status: "confirmed",
+  };
+
+  const grant = {
+    scope: "inspection_proof",
+    apartmentId: APT_ID,
+    reservationId: RES_ID,
+  };
+
+  it("opens GET /reservation/{reservationId} with a valid token and no session", async () => {
+    vi.mocked(specialAccessService.resolveByToken).mockResolvedValue(grant as never);
+    vi.mocked(specialAccessService.resolveApartmentOwner).mockResolvedValue(OWNER_ROW as never);
+    mockCheckExistence.mockResolvedValue(undefined);
+    mockGetByReservationId.mockResolvedValue({ id: "i-1", reservationId: RES_ID });
+
+    const res = await testApp.request(`/inspections/reservation/${RES_ID}?accessId=tok`);
+
+    // No Authorization header was sent: the token alone opened the route.
+    expect(res.status).toBe(200);
+  });
+
+  it("refuses a token minted for a DIFFERENT reservation", async () => {
+    vi.mocked(specialAccessService.resolveByToken).mockResolvedValue({
+      ...grant,
+      reservationId: "770e8400-e29b-41d4-a716-446655440099",
+    } as never);
+
+    const res = await testApp.request(`/inspections/reservation/${RES_ID}?accessId=tok`);
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.code).toBe("SPECIAL_ACCESS_SCOPE_MISMATCH");
+  });
+
+  it("still requires a session when no token is supplied", async () => {
+    const res = await testApp.request(`/inspections/reservation/${RES_ID}`);
+
+    expect(res.status).toBe(401);
   });
 });

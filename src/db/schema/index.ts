@@ -13,3 +13,4 @@ export * from "./inspection-flags";
 export * from "./incidents";
 export * from "./incident-items";
 export * from "./claim-evidence";
+export * from "./special-access";
