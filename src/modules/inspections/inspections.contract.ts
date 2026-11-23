@@ -10,6 +10,7 @@ import {
 } from "./inspections.schema";
 import { authGuard } from "@/middleware/authGuard";
 import { rolesGuard } from "@/middleware/roleGuard";
+import { specialAccessGuard } from "@/middleware/specialAccessGuard";
 import { errorResponses, AUTHED, ROLE, VALIDATION } from "@/core/errors/error.responses";
 import { CreateInspectionFlagSchema, InspectionFlagSchema } from "./inspectionFlags.schema";
 
@@ -17,6 +18,8 @@ const createInspectionErrors = errorResponses([
   ...AUTHED,
   ...ROLE,
   ...VALIDATION,
+  "SPECIAL_ACCESS_INVALID",
+  "SPECIAL_ACCESS_SCOPE_MISMATCH",
   "RESERVATION_NOT_FOUND",
   "INSPECTION_ALREADY_EXISTS",
   "RESERVATION_NOT_COVERED",
@@ -39,6 +42,8 @@ const getInspectionByReservationErrors = errorResponses([
   ...AUTHED,
   ...ROLE,
   ...VALIDATION,
+  "SPECIAL_ACCESS_INVALID",
+  "SPECIAL_ACCESS_SCOPE_MISMATCH",
   "RESERVATION_NOT_FOUND",
   "INSPECTION_NOT_FOUND",
 ]);
@@ -55,7 +60,13 @@ export const createInspectionRoute = createRoute({
   method: "post",
   path: "/",
   tags: ["Inspections"],
-  middleware: [authGuard, rolesGuard(["host"])] as const,
+  middleware: [
+    specialAccessGuard({
+      scope: "inspection_proof",
+      bind: { kind: "reservationBody", field: "reservationId" },
+      roles: ["host"],
+    }),
+  ] as const,
   request: {
     body: {
       content: {
@@ -140,7 +151,13 @@ export const getInspectionByReservationRoute = createRoute({
   method: "get",
   path: "/reservation/{reservationId}",
   tags: ["Inspections"],
-  middleware: [authGuard, rolesGuard(["admin", "host"])] as const,
+  middleware: [
+    specialAccessGuard({
+      scope: "inspection_proof",
+      bind: { kind: "reservationParam", param: "reservationId" },
+      roles: ["admin", "host"],
+    }),
+  ] as const,
   request: {
     params: ReservationParamSchema,
   },

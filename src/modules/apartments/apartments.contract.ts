@@ -14,9 +14,16 @@ import { authGuard } from "@/middleware/authGuard";
 import { rolesGuard } from "@/middleware/roleGuard";
 import { errorResponses, AUTHED, ROLE, APARTMENT_SCOPED, VALIDATION } from "@/core/errors/error.responses";
 import { apartmentGuard } from "@/middleware/apartmentGuard";
+import { specialAccessGuard } from "@/middleware/specialAccessGuard";
 
 const getApartmentsErrors = errorResponses([...AUTHED]);
-const getApartmentByIdErrors = errorResponses([...AUTHED, ...VALIDATION, "APARTMENT_NOT_FOUND"]);
+const getApartmentByIdErrors = errorResponses([
+  ...AUTHED,
+  "SPECIAL_ACCESS_INVALID",
+  "SPECIAL_ACCESS_SCOPE_MISMATCH",
+  ...VALIDATION,
+  "APARTMENT_NOT_FOUND",
+]);
 const createApartmentErrors = errorResponses([
   ...AUTHED,
   ...ROLE,
@@ -64,7 +71,12 @@ export const getApartmentByIdRoute = createRoute({
   method: "get",
   path: "/{id}",
   tags: ["Apartments"],
-  middleware: [authGuard] as const,
+  middleware: [
+    specialAccessGuard({
+      scope: "inspection_proof",
+      bind: { kind: "apartmentParam", param: "id" },
+    }),
+  ] as const,
   request: {
     params: z.object({
       id: z.string().uuid("Invalid apartment UUID"),
