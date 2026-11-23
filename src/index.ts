@@ -9,6 +9,7 @@ import shotsRoutes from "./modules/apartment_shots/apartment_shots.route";
 import inspectionsRoutes from "./modules/inspections/inspections.route";
 import incidentsRoutes from "./modules/incidents/incidents.route";
 import incidentsFieldRoutes from "./modules/incidents/incidents.field.route";
+import specialAccessRoutes from "./modules/special_access/special_access.route";
 import { dbMiddleware } from "./middleware/db";
 import { App } from "./types";
 import { supabaseMiddleware } from "./middleware/supabase";
@@ -60,6 +61,7 @@ app.route("/apartment-shots", shotsRoutes);
 app.route("/inspections", inspectionsRoutes);
 app.route("/incidents", incidentsRoutes);
 app.route("/field/ingest", incidentsFieldRoutes);
+app.route("/special-access", specialAccessRoutes);
 
 app.doc("/openapi.json", {
   openapi: "3.0.0",
