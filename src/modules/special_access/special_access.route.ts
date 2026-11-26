@@ -1,6 +1,8 @@
 import { createModuleApp } from "@/core/utils/module-app";
 import {
   createSpecialAccessRoute,
+  getSpecialAccessRoute,
+  listSpecialAccessRoute,
   revokeSpecialAccessRoute,
 } from "./special_access.contract";
 import { specialAccessService } from "./special_access.service";
@@ -83,6 +85,65 @@ app.openapi(revokeSpecialAccessRoute, async (c) => {
   await specialAccessService.revokeById(db, grant.id);
 
   return c.json({ success: true as const, accessId }, 200);
+});
+
+app.openapi(getSpecialAccessRoute, async (c) => {
+  const db = c.get("db");
+  const { accessId } = c.req.valid("param");
+
+  const grant = await specialAccessService.resolveByToken(db, accessId);
+
+  if (!grant) {
+    // One code for unknown, expired and revoked alike — asking which one it was
+    // is asking for an existence oracle.
+    throw specialAccessErrors.invalid({});
+  }
+
+  // Built field by field rather than spreading the row: `SpecialAccessSchema`
+  // includes `id`, `revokedAt`, `usedAt` and `createdAt`, and an anonymous caller
+  // must not receive them (D21). A spread here would silently widen the payload
+  // the day a column is added.
+  return c.json(
+    {
+      scope: grant.scope,
+      apartmentId: grant.apartmentId,
+      reservationId: grant.reservationId,
+      incidentItemId: grant.incidentItemId,
+      expiresAt: new Date(grant.expiresAt).toISOString(),
+    },
+    200,
+  );
+});
+
+app.openapi(listSpecialAccessRoute, async (c) => {
+  const db = c.get("db");
+  const { reservationId } = c.req.valid("query");
+  const user = c.get("user");
+
+  if (!user) {
+    throw incidentErrors.unauthenticated();
+  }
+
+  // Ownership is asserted against the SUBJECT's apartment, exactly as create and
+  // revoke do. Resolving through the reservation is what makes this host-scoped:
+  // the apartment comes from the reservation, never from the caller.
+  const subject = await specialAccessService.resolveSubjectApartment(db, {
+    reservationId,
+  });
+
+  if (!subject) {
+    throw reservationErrors.notFound({ id: reservationId });
+  }
+
+  await assertApartmentOwnership(db, subject.apartmentId, {
+    userId: user.id,
+    role: user.role,
+    allowAdmin: true,
+  });
+
+  const grants = await specialAccessService.listByReservation(db, reservationId);
+
+  return c.json(grants, 200);
 });
 
 export default app;

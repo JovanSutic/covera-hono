@@ -25,6 +25,8 @@ import {
 import { UploadTokensResponseSchema } from "../apartments/apartments.schema";
 import { authGuard } from "@/middleware/authGuard";
 import { rolesGuard } from "@/middleware/roleGuard";
+import { specialAccessGuard } from "@/middleware/specialAccessGuard";
+import { AccessIdQuerySchema } from "../special_access/special_access.schema";
 import {
   errorResponses,
   AUTHED,
@@ -72,6 +74,8 @@ const getIncidentErrors = errorResponses([
   ...ROLE,
   ...APARTMENT_SCOPED,
   ...VALIDATION,
+  "SPECIAL_ACCESS_INVALID",
+  "SPECIAL_ACCESS_SCOPE_MISMATCH",
   "INCIDENT_NOT_FOUND",
 ]);
 
@@ -114,6 +118,30 @@ const itemEvidenceErrors = errorResponses([
   "INCIDENT_NOT_EDITABLE",
   "INCIDENT_ITEM_NOT_FOUND",
   "EVIDENCE_NOT_FOUND",
+  "EVIDENCE_TYPE_MISMATCH",
+  "EVIDENCE_METADATA_INVALID",
+  "EVIDENCE_KEY_INVALID",
+  "MAX_EVIDENCE_EXCEEDED",
+  "MAX_ITEM_PHOTOS_EXCEEDED",
+]);
+
+/**
+ * The two writes a link-holder may make (use case 2: the link-holder posts the
+ * photos from both pages). They cannot reuse `itemEvidenceErrors`, which the
+ * session-only `deleteEvidenceRoute` also spreads: that route can never produce a
+ * `SPECIAL_ACCESS_*` code, and a contract declaring a failure the route cannot
+ * produce is a lie the next reader will trust.
+ */
+const claimEvidenceWriteErrors = errorResponses([
+  ...AUTHED,
+  ...ROLE,
+  ...APARTMENT_SCOPED,
+  ...VALIDATION,
+  "SPECIAL_ACCESS_INVALID",
+  "SPECIAL_ACCESS_SCOPE_MISMATCH",
+  "INCIDENT_NOT_FOUND",
+  "INCIDENT_NOT_EDITABLE",
+  "INCIDENT_ITEM_NOT_FOUND",
   "EVIDENCE_TYPE_MISMATCH",
   "EVIDENCE_METADATA_INVALID",
   "EVIDENCE_KEY_INVALID",
@@ -215,9 +243,16 @@ export const getIncidentRoute = createRoute({
   method: "get",
   path: "/{id}",
   tags: ["Incidents"],
-  middleware: [authGuard, rolesGuard(["admin", "host"])] as const,
+  middleware: [
+    specialAccessGuard({
+      scope: "inspection_proof",
+      bind: { kind: "incidentParam", param: "id" },
+      roles: ["admin", "host"],
+    }),
+  ] as const,
   request: {
     params: IncidentParamSchema,
+    query: AccessIdQuerySchema,
   },
   responses: {
     200: {
@@ -401,9 +436,16 @@ export const requestEvidenceUploadTokensRoute = createRoute({
   method: "post",
   path: "/{id}/items/{itemId}/upload-tokens",
   tags: ["Incidents"],
-  middleware: [authGuard, rolesGuard(["admin", "host"])] as const,
+  middleware: [
+    specialAccessGuard({
+      scope: "inspection_proof",
+      bind: { kind: "incidentParam", param: "id" },
+      roles: ["admin", "host"],
+    }),
+  ] as const,
   request: {
     params: IncidentItemParamSchema,
+    query: AccessIdQuerySchema,
     body: {
       content: {
         "application/json": {
@@ -421,7 +463,7 @@ export const requestEvidenceUploadTokensRoute = createRoute({
         },
       },
     },
-    ...itemEvidenceErrors,
+    ...claimEvidenceWriteErrors,
   },
 });
 
@@ -438,9 +480,16 @@ export const attachEvidenceRoute = createRoute({
   method: "post",
   path: "/{id}/items/{itemId}/evidence",
   tags: ["Incidents"],
-  middleware: [authGuard, rolesGuard(["admin", "host"])] as const,
+  middleware: [
+    specialAccessGuard({
+      scope: "inspection_proof",
+      bind: { kind: "incidentParam", param: "id" },
+      roles: ["admin", "host"],
+    }),
+  ] as const,
   request: {
     params: IncidentItemParamSchema,
+    query: AccessIdQuerySchema,
     body: {
       content: {
         "application/json": {
@@ -458,7 +507,7 @@ export const attachEvidenceRoute = createRoute({
         },
       },
     },
-    ...itemEvidenceErrors,
+    ...claimEvidenceWriteErrors,
   },
 });
 

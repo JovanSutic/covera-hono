@@ -51,6 +51,24 @@ vi.mock("@/core/utils/db-validator", () => ({
   assertCanModifyApartmentShots: mockAssertCanModifyApartmentShots,
 }));
 
+const {
+  mockResolveByToken,
+  mockResolveApartmentOwner,
+  mockResolveIncidentReservation,
+} = vi.hoisted(() => ({
+  mockResolveByToken: vi.fn(),
+  mockResolveApartmentOwner: vi.fn(),
+  mockResolveIncidentReservation: vi.fn(),
+}));
+
+vi.mock("../special_access/special_access.service", () => ({
+  specialAccessService: {
+    resolveByToken: mockResolveByToken,
+    resolveApartmentOwner: mockResolveApartmentOwner,
+    resolveIncidentReservation: mockResolveIncidentReservation,
+  },
+}));
+
 const mockGetUser = vi.fn();
 const mockUpdateUserById = vi.fn();
 
@@ -395,5 +413,31 @@ describe("Assets routes", () => {
       expect(body.error.message).toMatch(/only available to: admin, host/);
       expect(mockGetAllTypes).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("guest access via ?accessId=", () => {
+  const GRANT = {
+    scope: "inspection_proof",
+    apartmentId: VALID_APARTMENT_ID,
+    reservationId: "770e8400-e29b-41d4-a716-446655440000",
+  };
+
+  it("lets a link-holder list the apartment's assets", async () => {
+    mockResolveByToken.mockResolvedValue(GRANT);
+    mockResolveApartmentOwner.mockResolvedValue({
+      id: VALID_UUID,
+      authId: VALID_UUID,
+      role: "host",
+      status: "confirmed",
+    });
+    mockCheckExistence.mockResolvedValue(undefined);
+    mockGetByApartmentId.mockResolvedValue([]);
+
+    const res = await testApp.request(
+      `/assets/apartment/${VALID_APARTMENT_ID}?accessId=good`,
+    );
+
+    expect(res.status).toBe(200);
   });
 });

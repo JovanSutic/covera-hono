@@ -93,6 +93,30 @@ export const CreateReservationSchema = InsertReservationSchema.omit({
 export const UpdateReservationSchema =
   CreateReservationSchema.partial().openapi("UpdateReservation");
 
+/**
+ * What an access link may change about a reservation: exactly the two fields the
+ * inspection guide's submit chain sends when it finishes — nothing else.
+ *
+ * `UpdateReservationSchema` is `CreateReservationSchema.partial()`, so it would
+ * also let a link-holder move `checkInDatetime` / `checkOutDatetime`, a wider
+ * capability than "record that the proofs are done" and one that can collide with
+ * another stay.
+ *
+ * `strictObject`, not `object`: a plain object STRIPS unknown keys, so
+ * `safeParse` would succeed on a body carrying the dates and the move would slip
+ * through. Strict is what makes the rule enforceable.
+ *
+ * `status` is the literal `COVERED`, not the status enum: DISPUTED, RESOLVED and
+ * CLOSED are resolution states that belong to the host and the guest, not to
+ * whoever is holding a photo link.
+ */
+export const ProofCompletionSchema = z
+  .strictObject({
+    hasPhotoProof: z.boolean().optional(),
+    status: z.literal("COVERED").optional(),
+  })
+  .openapi("ProofCompletion");
+
 export const ReservationParamSchema = z.object({
   id: z.uuid().openapi({
     param: {

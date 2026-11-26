@@ -9,7 +9,7 @@ import {
 } from "./apartments.contract";
 import { apartmentsService } from "./apartments.service";
 import { apartmentErrors } from "./apartments.errors";
-import { checkExistence } from "@/core/utils/db-validator";
+import { checkExistence, assertApartmentOwnership } from "@/core/utils/db-validator";
 import { usersService } from "../users/users.service";
 
 const app = createModuleApp();
@@ -55,8 +55,27 @@ app.openapi(requestUploadTokensRoute, async (c) => {
 
   const { id } = c.req.valid("param");
   const { fileTypes } = c.req.valid("json");
+  const user = c.get("user");
 
   await checkExistence(db, "apartments", id);
+
+  // `apartmentGuard(false)` used to sit in this route's middleware and was the
+  // ONLY ownership check — the handler asserted nothing. `specialAccessGuard`'s
+  // session branch does not run `apartmentGuard`, so the check has to live here:
+  // without it any signed-in host could mint upload tokens for any apartment.
+  //
+  // Skipped when a token is present. The guard has already proved the grant's
+  // apartment equals the path param and set `user` to that apartment's owner, so
+  // re-deriving it would be a second read of something already established. On
+  // the session path it runs with `allowAdmin: false`, which is exactly the rule
+  // `apartmentGuard(false)` enforced.
+  if (user && !c.req.query("accessId")) {
+    await assertApartmentOwnership(db, id, {
+      userId: user.id,
+      role: user.role,
+      allowAdmin: false,
+    });
+  }
 
   const tokens = await apartmentsService.generateUploadTokens(
     s3,
@@ -72,6 +91,17 @@ app.openapi(confirmUploadRoute, async (c) => {
   const db = c.get("db");
   const { id: apartmentId } = c.req.valid("param");
   const body = c.req.valid("json");
+  const user = c.get("user");
+
+  // Same reason as the upload-tokens handler above: this route's only ownership
+  // check was `apartmentGuard(false)`, which `specialAccessGuard` does not run.
+  if (user && !c.req.query("accessId")) {
+    await assertApartmentOwnership(db, apartmentId, {
+      userId: user.id,
+      role: user.role,
+      allowAdmin: false,
+    });
+  }
 
   const result = await apartmentsService.syncUploadedPhotos(
     db,

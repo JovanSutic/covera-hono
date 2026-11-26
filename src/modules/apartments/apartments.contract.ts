@@ -15,6 +15,7 @@ import { rolesGuard } from "@/middleware/roleGuard";
 import { errorResponses, AUTHED, ROLE, APARTMENT_SCOPED, VALIDATION } from "@/core/errors/error.responses";
 import { apartmentGuard } from "@/middleware/apartmentGuard";
 import { specialAccessGuard } from "@/middleware/specialAccessGuard";
+import { AccessIdQuerySchema } from "../special_access/special_access.schema";
 
 const getApartmentsErrors = errorResponses([...AUTHED]);
 const getApartmentByIdErrors = errorResponses([
@@ -37,6 +38,8 @@ const requestUploadTokensErrors = errorResponses([
   ...ROLE,
   ...APARTMENT_SCOPED,
   ...VALIDATION,
+  "SPECIAL_ACCESS_INVALID",
+  "SPECIAL_ACCESS_SCOPE_MISMATCH",
   "MAX_PHOTOS_EXCEEDED",
 ]);
 const confirmUploadErrors = errorResponses([
@@ -44,6 +47,8 @@ const confirmUploadErrors = errorResponses([
   ...ROLE,
   ...APARTMENT_SCOPED,
   ...VALIDATION,
+  "SPECIAL_ACCESS_INVALID",
+  "SPECIAL_ACCESS_SCOPE_MISMATCH",
   "MAX_PHOTOS_EXCEEDED",
   "DUPLICATE_RECORD",
 ]);
@@ -81,6 +86,7 @@ export const getApartmentByIdRoute = createRoute({
     params: z.object({
       id: z.string().uuid("Invalid apartment UUID"),
     }),
+    query: AccessIdQuerySchema,
   },
   responses: {
     200: {
@@ -126,11 +132,18 @@ export const requestUploadTokensRoute = createRoute({
   method: "post",
   path: "/{id}/photos/upload-tokens",
   tags: ["Apartments"],
-  middleware: [authGuard, rolesGuard(["admin", "host"]), apartmentGuard(false)] as const,
+  middleware: [
+    specialAccessGuard({
+      scope: "inspection_proof",
+      bind: { kind: "apartmentParam", param: "id" },
+      roles: ["admin", "host"],
+    }),
+  ] as const,
   request: {
     params: z.object({
       id: z.string().uuid("Invalid apartment UUID"),
     }),
+    query: AccessIdQuerySchema,
     body: {
       content: {
         "application/json": {
@@ -156,11 +169,18 @@ export const confirmUploadRoute = createRoute({
   method: "post",
   path: "/{id}/photos/confirm",
   tags: ["Apartments"],
-  middleware: [authGuard, rolesGuard(["admin", "host"]), apartmentGuard(false)] as const,
+  middleware: [
+    specialAccessGuard({
+      scope: "inspection_proof",
+      bind: { kind: "apartmentParam", param: "id" },
+      roles: ["admin", "host"],
+    }),
+  ] as const,
   request: {
     params: z.object({
       id: z.string().uuid("Invalid apartment UUID"),
     }),
+    query: AccessIdQuerySchema,
     body: {
       content: {
         "application/json": {

@@ -7,6 +7,10 @@
  *
  *   - `authGuard` in `middleware`              → 401 present
  *   - `rolesGuard` / `apartmentGuard`          → 403 present
+ *   - `specialAccessGuard`                     → BOTH 401 and 403 present: its
+ *     session branch is `authGuard` + `rolesGuard`, and its token branch can
+ *     answer 403. Without naming it here, swapping a route onto this guard makes
+ *     the checker stop requiring either status.
  *   - any route at all                         → 500 present
  *
  * Spreads are resolved by evaluating the local `const xErrors = errorResponses([...])` calls,
@@ -140,7 +144,12 @@ const analyze = (file: string) => {
 
         if (prop.name.text === "middleware") {
           const text = prop.initializer.getText(source);
-          for (const guard of ["authGuard", "rolesGuard", "apartmentGuard"]) {
+          for (const guard of [
+            "authGuard",
+            "rolesGuard",
+            "apartmentGuard",
+            "specialAccessGuard",
+          ]) {
             if (new RegExp(`\\b${guard}\\b`).test(text)) guards.push(guard);
           }
         }
@@ -210,10 +219,16 @@ for (const file of contractFiles) {
     }
 
     if (!statuses.has(500)) problems.push(`${where}: missing 500`);
-    if (route.guards.includes("authGuard") && !statuses.has(401))
+    if (
+      (route.guards.includes("authGuard") ||
+        route.guards.includes("specialAccessGuard")) &&
+      !statuses.has(401)
+    )
       problems.push(`${where}: mounts authGuard but declares no 401`);
     if (
-      (route.guards.includes("rolesGuard") || route.guards.includes("apartmentGuard")) &&
+      (route.guards.includes("rolesGuard") ||
+        route.guards.includes("apartmentGuard") ||
+        route.guards.includes("specialAccessGuard")) &&
       !statuses.has(403)
     )
       problems.push(`${where}: mounts a role/apartment guard but declares no 403`);
