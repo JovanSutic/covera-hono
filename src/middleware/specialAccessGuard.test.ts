@@ -4,18 +4,23 @@ import { validationHook, renderError, toErrorResponse } from "@/core/errors/erro
 import { specialAccessGuard, type AccessBind } from "./specialAccessGuard";
 import { App } from "@/types";
 
-const { mockResolveByToken, mockResolveApartmentOwner, mockGetByAuthId } = vi.hoisted(
-  () => ({
-    mockResolveByToken: vi.fn(),
-    mockResolveApartmentOwner: vi.fn(),
-    mockGetByAuthId: vi.fn(),
-  }),
-);
+const {
+  mockResolveByToken,
+  mockResolveApartmentOwner,
+  mockResolveIncidentReservation,
+  mockGetByAuthId,
+} = vi.hoisted(() => ({
+  mockResolveByToken: vi.fn(),
+  mockResolveApartmentOwner: vi.fn(),
+  mockResolveIncidentReservation: vi.fn(),
+  mockGetByAuthId: vi.fn(),
+}));
 
 vi.mock("../modules/special_access/special_access.service", () => ({
   specialAccessService: {
     resolveByToken: mockResolveByToken,
     resolveApartmentOwner: mockResolveApartmentOwner,
+    resolveIncidentReservation: mockResolveIncidentReservation,
   },
 }));
 
@@ -332,5 +337,60 @@ describe("specialAccessGuard — the token path", () => {
 
     expect(res.status).toBe(403);
     expect((await res.json()).error.code).toBe("SPECIAL_ACCESS_INVALID");
+  });
+
+  /**
+   * The path param in this harness is always `RESERVATION_ID`; what the incident
+   * bind compares is what `resolveIncidentReservation` RETURNS, so these cases pin
+   * the comparison rather than the lookup. The third case pins the call itself.
+   */
+  it("binds an incident-scoped route by the incident's reservation", async () => {
+    const app = buildApp({
+      scope: "inspection_proof",
+      bind: { kind: "incidentParam", param: "id" },
+      roles: ["admin", "host"],
+    });
+    mockResolveByToken.mockResolvedValue(grant);
+    mockResolveIncidentReservation.mockResolvedValue(RESERVATION_ID);
+    mockResolveApartmentOwner.mockResolvedValue(OWNER);
+
+    const res = await call(app, "?accessId=good");
+
+    expect(res.status).toBe(200);
+  });
+
+  it("403s an incident that belongs to ANOTHER reservation", async () => {
+    const app = buildApp({
+      scope: "inspection_proof",
+      bind: { kind: "incidentParam", param: "id" },
+      roles: ["admin", "host"],
+    });
+    mockResolveByToken.mockResolvedValue(grant);
+    mockResolveIncidentReservation.mockResolvedValue(OTHER_RESERVATION_ID);
+
+    const res = await call(app, "?accessId=good");
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.code).toBe("SPECIAL_ACCESS_SCOPE_MISMATCH");
+  });
+
+  it("403s an unknown incident, resolving it by the path param", async () => {
+    const app = buildApp({
+      scope: "inspection_proof",
+      bind: { kind: "incidentParam", param: "id" },
+      roles: ["admin", "host"],
+    });
+    mockResolveByToken.mockResolvedValue(grant);
+    mockResolveIncidentReservation.mockResolvedValue(null);
+
+    const res = await call(app, "?accessId=good");
+
+    expect(res.status).toBe(403);
+    expect(mockResolveIncidentReservation).toHaveBeenCalledWith(
+      expect.anything(),
+      RESERVATION_ID,
+    );
+    // A target that does not resolve must not reach the owner lookup.
+    expect(mockResolveApartmentOwner).not.toHaveBeenCalled();
   });
 });

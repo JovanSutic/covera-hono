@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   specialAccess,
   apartments,
@@ -104,6 +104,27 @@ export const specialAccessService = {
   },
 
   /**
+   * The reservation an incident belongs to, for the guard's `incidentParam` bind.
+   *
+   * `null` for an unknown incident, which the guard treats as a mismatch rather
+   * than a 404: the token is validated before any target is trusted, so an
+   * unknown incident must be indistinguishable from one belonging to somebody
+   * else's reservation.
+   */
+  async resolveIncidentReservation(
+    db: Variables["db"],
+    incidentId: string,
+  ): Promise<string | null> {
+    const [row] = await db
+      .select({ reservationId: incidents.reservationId })
+      .from(incidents)
+      .where(eq(incidents.id, incidentId))
+      .limit(1);
+
+    return row?.reservationId ?? null;
+  },
+
+  /**
    * Mints a grant and returns the row INCLUDING `accessId` (D14). The token is
    * generated here rather than in the route, so this and the resolver are the only
    * two places that ever handle it.
@@ -174,6 +195,31 @@ export const specialAccessService = {
       .limit(1);
 
     return (row as SpecialAccess | undefined) ?? null;
+  },
+
+  /**
+   * Every grant ever minted for one reservation, newest first, INCLUDING revoked
+   * and expired ones.
+   *
+   * Revoked grants are returned on purpose: the host's question is "is the link I
+   * sent still alive?", and a row that silently vanished cannot answer it. Telling
+   * a dead link from a live one is the caller's job, from `revokedAt` and
+   * `expiresAt`.
+   *
+   * This is the MANAGEMENT view, not a redemption — `findByToken`'s stance, not
+   * `resolveByToken`'s — because the caller is a host looking at their own links.
+   */
+  async listByReservation(
+    db: Variables["db"],
+    reservationId: string,
+  ): Promise<SpecialAccess[]> {
+    const rows = await db
+      .select()
+      .from(specialAccess)
+      .where(eq(specialAccess.reservationId, reservationId))
+      .orderBy(desc(specialAccess.createdAt));
+
+    return rows as SpecialAccess[];
   },
 
   /**

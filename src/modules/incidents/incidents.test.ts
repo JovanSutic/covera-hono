@@ -96,6 +96,24 @@ vi.mock("../reservations/reservations.service", () => ({
   reservationsService: { getById: mockReservationGetById },
 }));
 
+const {
+  mockResolveByToken,
+  mockResolveApartmentOwner,
+  mockResolveIncidentReservation,
+} = vi.hoisted(() => ({
+  mockResolveByToken: vi.fn(),
+  mockResolveApartmentOwner: vi.fn(),
+  mockResolveIncidentReservation: vi.fn(),
+}));
+
+vi.mock("../special_access/special_access.service", () => ({
+  specialAccessService: {
+    resolveByToken: mockResolveByToken,
+    resolveApartmentOwner: mockResolveApartmentOwner,
+    resolveIncidentReservation: mockResolveIncidentReservation,
+  },
+}));
+
 vi.mock("@/core/utils/db-validator", () => ({
   assertApartmentOwnership: mockAssertApartmentOwnership,
   checkExistence: vi.fn(),
@@ -1720,5 +1738,66 @@ describe("Incidents routes", () => {
       expect(Object.keys(evidence.properties)).toContain("kind");
       expect(evidence.properties.kind.enum).toEqual(["photo", "document"]);
     });
+  });
+});
+
+const OTHER_RESERVATION = "770e8400-e29b-41d4-a716-446655440099";
+
+/**
+ * The token path on the claim routes. The happy path here is a READ, because it
+ * needs only the mocks this file already has; the write route is pinned on its
+ * refusal, which is the half that carries the new bind. The bind's positive case
+ * lives in `specialAccessGuard.test.ts`, where the harness is built for it.
+ */
+describe("guest access via ?accessId=", () => {
+  const GRANT = {
+    scope: "inspection_proof",
+    apartmentId: APARTMENT_ID,
+    reservationId: RESERVATION_ID,
+  };
+
+  const owner = {
+    id: USER_ID,
+    authId: USER_ID,
+    role: "host",
+    status: "confirmed",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedUserService.getByAuthId.mockResolvedValue(owner);
+    mockAssertApartmentOwnership.mockResolvedValue(undefined);
+  });
+
+  it("lets a link-holder read the claim the link covers", async () => {
+    mockResolveByToken.mockResolvedValue(GRANT);
+    mockResolveIncidentReservation.mockResolvedValue(RESERVATION_ID);
+    mockResolveApartmentOwner.mockResolvedValue(owner);
+    mockGetById.mockResolvedValue(createdIncident);
+    mockReservationGetById.mockResolvedValue(openReservation());
+
+    const res = await testApp.request(`/incidents/${INCIDENT_ID}?accessId=good`);
+
+    expect(res.status).toBe(200);
+  });
+
+  it("403s a link that does not cover the claim it tries to write to", async () => {
+    mockResolveByToken.mockResolvedValue(GRANT);
+    mockResolveIncidentReservation.mockResolvedValue(OTHER_RESERVATION);
+
+    // The guard runs before the route's validators (`createRoute` middleware runs
+    // first), so this 403 does not depend on the body — an empty `evidence` array
+    // is deliberate, and a 400 here would mean that ordering changed.
+    const res = await testApp.request(
+      `/incidents/${INCIDENT_ID}/items/${ITEM_ID}/evidence?accessId=good`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ evidence: [] }),
+      },
+    );
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.code).toBe("SPECIAL_ACCESS_SCOPE_MISMATCH");
   });
 });

@@ -14,6 +14,8 @@ import {
   assertNoOverlappingReservation,
   checkExistence,
 } from "@/core/utils/db-validator";
+import { ProofCompletionSchema } from "./reservations.schema";
+import { BadRequestException } from "@/core/errors/error.exceptions";
 
 const app = createModuleApp();
 
@@ -125,6 +127,33 @@ app.openapi(updateReservationRoute, async (c) => {
   const db = c.get("db");
   const { id } = c.req.valid("param");
   const body = c.req.valid("json");
+
+  // A token request is narrowed to the two fields the guide's submit chain sends.
+  // The query is read here rather than through `c.req.valid`, because it is the
+  // GUARD's transport rather than this route's declared contract — the guard has
+  // already validated the token and set `user` to the apartment's owner, so there
+  // is nothing left to check but the body.
+  //
+  // The failure is a 400 with the envelope's `details[]`, not a second 403: the
+  // credential is valid and the request is malformed, which is what a validator
+  // would have produced had JSON Schema been able to express the rule.
+  if (c.req.query("accessId")) {
+    const completion = ProofCompletionSchema.safeParse(body);
+
+    if (!completion.success) {
+      throw new BadRequestException({
+        code: "VALIDATION_ERROR",
+        message:
+          "An access link may only record that the proofs are done. It can set " +
+          "hasPhotoProof and status (COVERED), and nothing else.",
+        details: completion.error.issues.map((issue) => ({
+          field: issue.path.join(".") || "body",
+          message: issue.message,
+        })),
+        meta: { origin: "DOMAIN", via: "access-link" },
+      });
+    }
+  }
 
   const updatedReservation = await reservationsService.update(db, id, body);
 

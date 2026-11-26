@@ -71,6 +71,24 @@ app.doc("/openapi.json", {
   },
 });
 
+/**
+ * The access-link credential, declared for code generation only. The guard is
+ * either-or — a bearer session OR `?accessId=` — and OpenAPI 3.0 cannot express
+ * that, so no route carries a `security` array (which would mean "required") and
+ * this scheme is a declaration, not a requirement (D7).
+ *
+ * Registering after `app.doc` is fine: the document is generated per request, not
+ * captured at this call.
+ */
+app.openAPIRegistry.registerComponent("securitySchemes", "specialAccess", {
+  type: "apiKey",
+  in: "query",
+  name: "accessId",
+  description:
+    "Alternative to a bearer session on the routes that accept an access link. " +
+    "Supply it as a query parameter; the session is then ignored entirely.",
+});
+
 app.get("/docs", swaggerUI({ url: "/openapi.json" }));
 
 export default app;

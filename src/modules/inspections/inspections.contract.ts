@@ -11,6 +11,7 @@ import {
 import { authGuard } from "@/middleware/authGuard";
 import { rolesGuard } from "@/middleware/roleGuard";
 import { specialAccessGuard } from "@/middleware/specialAccessGuard";
+import { AccessIdQuerySchema } from "../special_access/special_access.schema";
 import { errorResponses, AUTHED, ROLE, VALIDATION } from "@/core/errors/error.responses";
 import { CreateInspectionFlagSchema, InspectionFlagSchema } from "./inspectionFlags.schema";
 
@@ -68,6 +69,7 @@ export const createInspectionRoute = createRoute({
     }),
   ] as const,
   request: {
+    query: AccessIdQuerySchema,
     body: {
       content: {
         "application/json": {
@@ -160,6 +162,7 @@ export const getInspectionByReservationRoute = createRoute({
   ] as const,
   request: {
     params: ReservationParamSchema,
+    query: AccessIdQuerySchema,
   },
   responses: {
     200: {

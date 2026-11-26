@@ -10,6 +10,7 @@ import { authGuard } from "@/middleware/authGuard";
 import { errorResponses, AUTHED, ROLE, VALIDATION } from "@/core/errors/error.responses";
 import { rolesGuard } from "@/middleware/roleGuard";
 import { specialAccessGuard } from "@/middleware/specialAccessGuard";
+import { AccessIdQuerySchema } from "../special_access/special_access.schema";
 
 const getShotsByApartmentErrors = errorResponses([
   ...AUTHED,
@@ -42,7 +43,7 @@ export const getShotsByApartmentRoute = createRoute({
   ] as const,
   request: {
     params: ApartmentParamSchema,
-    query: GetShotsQuerySchema,
+    query: GetShotsQuerySchema.extend(AccessIdQuerySchema.shape),
   },
   responses: {
     200: {

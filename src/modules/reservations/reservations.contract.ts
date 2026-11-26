@@ -16,6 +16,7 @@ import { errorResponses, AUTHED, ROLE, APARTMENT_SCOPED, VALIDATION } from "@/co
 import { rolesGuard } from "@/middleware/roleGuard";
 import { apartmentGuard } from "@/middleware/apartmentGuard";
 import { specialAccessGuard } from "@/middleware/specialAccessGuard";
+import { AccessIdQuerySchema } from "../special_access/special_access.schema";
 
 const getReservationsByApartmentErrors = errorResponses([
   ...AUTHED,
@@ -37,6 +38,8 @@ const updateReservationErrors = errorResponses([
   ...AUTHED,
   ...ROLE,
   ...VALIDATION,
+  "SPECIAL_ACCESS_INVALID",
+  "SPECIAL_ACCESS_SCOPE_MISMATCH",
   "RESERVATION_NOT_FOUND",
   "RESERVATION_OVERLAP",
   "RESERVATION_INVALID_RANGE",
@@ -51,6 +54,8 @@ const getReservationByIdErrors = errorResponses([
   ...AUTHED,
   ...ROLE,
   ...VALIDATION,
+  "SPECIAL_ACCESS_INVALID",
+  "SPECIAL_ACCESS_SCOPE_MISMATCH",
   "RESERVATION_NOT_FOUND",
   "APARTMENT_NOT_FOUND",
   "FORBIDDEN_APARTMENT_ACCESS",
@@ -74,6 +79,7 @@ export const getReservationPhotosRoute = createRoute({
   ] as const,
   request: {
     params: ReservationParamSchema,
+    query: AccessIdQuerySchema,
   },
   responses: {
     200: {
@@ -127,6 +133,7 @@ export const getReservationByIdRoute = createRoute({
   ] as const,
   request: {
     params: ReservationParamSchema,
+    query: AccessIdQuerySchema,
   },
   responses: {
     200: {
@@ -172,10 +179,21 @@ export const updateReservationRoute = createRoute({
   method: "patch",
   path: "/{id}",
   tags: ["Reservations"],
-  middleware: [authGuard, rolesGuard(["host"])] as const,
+  middleware: [
+    specialAccessGuard({
+      scope: "inspection_proof",
+      bind: { kind: "reservationParam", param: "id" },
+      roles: ["host"],
+    }),
+  ] as const,
   request: {
     params: ReservationParamSchema,
+    query: AccessIdQuerySchema,
     body: {
+      description:
+        "The fields to change. A request carrying `?accessId=` may change ONLY " +
+        "`hasPhotoProof` and `status` (`COVERED`) — any other field is a `400 " +
+        "VALIDATION_ERROR`. The session path is unrestricted.",
       content: {
         "application/json": {
           schema: UpdateReservationSchema,

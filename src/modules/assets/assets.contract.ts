@@ -12,11 +12,15 @@ import {
 import { authGuard } from "@/middleware/authGuard";
 import { errorResponses, AUTHED, ROLE, VALIDATION } from "@/core/errors/error.responses";
 import { rolesGuard } from "@/middleware/roleGuard";
+import { specialAccessGuard } from "@/middleware/specialAccessGuard";
+import { AccessIdQuerySchema } from "../special_access/special_access.schema";
 
 const getAssetsByApartmentErrors = errorResponses([
   ...AUTHED,
   ...ROLE,
   ...VALIDATION,
+  "SPECIAL_ACCESS_INVALID",
+  "SPECIAL_ACCESS_SCOPE_MISMATCH",
   "APARTMENT_NOT_FOUND",
 ]);
 const createAssetErrors = errorResponses([
@@ -41,9 +45,16 @@ export const getAssetsByApartmentRoute = createRoute({
   method: "get",
   path: "/apartment/{apartmentId}",
   tags: ["Assets"],
-  middleware: [authGuard, rolesGuard(["admin","host"])] as const,
+  middleware: [
+    specialAccessGuard({
+      scope: "inspection_proof",
+      bind: { kind: "apartmentParam", param: "apartmentId" },
+      roles: ["admin", "host"],
+    }),
+  ] as const,
   request: {
     params: ApartmentParamSchema,
+    query: AccessIdQuerySchema,
   },
   responses: {
     200: {

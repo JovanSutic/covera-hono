@@ -67,6 +67,24 @@ vi.mock("@/core/utils/db-validator", () => ({
   assertNoOverlappingReservation: mockAssertNoOverlappingReservation,
 }));
 
+const {
+  mockResolveByToken,
+  mockResolveApartmentOwner,
+  mockResolveIncidentReservation,
+} = vi.hoisted(() => ({
+  mockResolveByToken: vi.fn(),
+  mockResolveApartmentOwner: vi.fn(),
+  mockResolveIncidentReservation: vi.fn(),
+}));
+
+vi.mock("../special_access/special_access.service", () => ({
+  specialAccessService: {
+    resolveByToken: mockResolveByToken,
+    resolveApartmentOwner: mockResolveApartmentOwner,
+    resolveIncidentReservation: mockResolveIncidentReservation,
+  },
+}));
+
 const mockGetUser = vi.fn();
 const mockUpdateUserById = vi.fn();
 
@@ -684,5 +702,60 @@ describe("Reservations routes", () => {
 
       expect(mockGetProofPhotos).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("guest access via ?accessId= on PATCH /reservations/{id}", () => {
+  const GRANT = {
+    scope: "inspection_proof",
+    apartmentId: VALID_APARTMENT_ID,
+    reservationId: VALID_RESERVATION_ID,
+  };
+
+  const owner = {
+    id: VALID_USER_ID,
+    authId: VALID_USER_ID,
+    role: "host",
+    status: "confirmed",
+  };
+
+  const patchWithToken = (body: unknown) =>
+    testApp.request(`/reservations/${VALID_RESERVATION_ID}?accessId=good`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockResolveByToken.mockResolvedValue(GRANT);
+    mockResolveApartmentOwner.mockResolvedValue(owner);
+    mockUpdate.mockResolvedValue({
+      id: VALID_RESERVATION_ID,
+      status: "COVERED",
+    });
+  });
+
+  it("allows the two fields the guide's submit chain sends", async () => {
+    const res = await patchWithToken({ hasPhotoProof: true, status: "COVERED" });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("refuses a date move with 400 and writes nothing", async () => {
+    const res = await patchWithToken({
+      checkInDatetime: "2026-01-01T00:00:00.000Z",
+    });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("refuses a status outside COVERED with 400", async () => {
+    const res = await patchWithToken({ status: "DISPUTED" });
+
+    expect(res.status).toBe(400);
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 });

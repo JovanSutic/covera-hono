@@ -1,5 +1,5 @@
 import { createMiddleware } from "hono/factory";
-import { App } from "@/types";
+import { App, Variables } from "@/types";
 import { authGuard } from "./authGuard";
 import { rolesGuard, type UserRole } from "./roleGuard";
 import { specialAccessService } from "../modules/special_access/special_access.service";
@@ -8,13 +8,21 @@ import type { AccessScope } from "@/db";
 
 /**
  * Where a route's protected target lives, and therefore what the grant must
- * match. Named explicitly per route because the six routes disagree on their
- * param name (`/apartments/{id}` vs `/apartment-shots/apartment/{apartmentId}`),
- * so an implicit "find an id" resolver would be wrong on half of them (D11).
+ * match. Named explicitly per route because the routes disagree on their param
+ * name (`/apartments/{id}` vs `/apartment-shots/apartment/{apartmentId}`), so an
+ * implicit "find an id" resolver would be wrong on half of them (D11).
+ *
+ * `incidentParam` is the one kind that needs a read of its own: an incident id is
+ * not a reservation id, so the guard resolves the incident's `reservationId` and
+ * compares that. Binding such a route by `apartmentParam` instead would match the
+ * grant's apartment while letting a link scoped to ONE reservation open a claim
+ * for a different stay in the same apartment — which is precisely the narrowing
+ * `targetMatches` exists to preserve.
  */
 export type AccessBind =
   | { kind: "reservationParam"; param: string }
   | { kind: "apartmentParam"; param: string }
+  | { kind: "incidentParam"; param: string }
   | { kind: "reservationBody"; field: string };
 
 /**
@@ -78,7 +86,7 @@ export const specialAccessGuard = (opts: {
       throw specialAccessErrors.scopeMismatch({ scope: grant.scope });
     }
 
-    if (!(await targetMatches(c, grant, opts.bind))) {
+    if (!(await targetMatches(c, grant, opts.bind, db))) {
       throw specialAccessErrors.scopeMismatch({ bind: opts.bind.kind });
     }
 
@@ -108,7 +116,9 @@ export const specialAccessGuard = (opts: {
  * apartment, because the handlers assert apartment ownership (which would pass)
  * and not reservation identity.
  *
- * Path params are always available here. The body is NOT yet validated —
+ * Path params are always available here. `incidentParam` is the exception that
+ * costs one indexed read of `incidents`, paid only on the token path, to turn the
+ * param into a reservation id. The body is NOT yet validated —
  * `createRoute`'s validators run after `middleware` — so a body-bound target is
  * read from a clone of the raw request. If the body is unparseable the check is
  * skipped rather than failed: the validator that runs next will reject it with a
@@ -119,6 +129,7 @@ async function targetMatches(
   c: { req: { param: (name: string) => string | undefined; raw: Request } },
   grant: { reservationId: string | null; apartmentId: string },
   bind: AccessBind,
+  db: Variables["db"],
 ): Promise<boolean> {
   if (bind.kind === "reservationParam") {
     return c.req.param(bind.param) === grant.reservationId;
@@ -126,6 +137,19 @@ async function targetMatches(
 
   if (bind.kind === "apartmentParam") {
     return c.req.param(bind.param) === grant.apartmentId;
+  }
+
+  if (bind.kind === "incidentParam") {
+    const incidentId = c.req.param(bind.param);
+
+    if (!incidentId) return false;
+
+    const reservationId = await specialAccessService.resolveIncidentReservation(
+      db,
+      incidentId,
+    );
+
+    return reservationId !== null && reservationId === grant.reservationId;
   }
 
   let body: Record<string, unknown>;

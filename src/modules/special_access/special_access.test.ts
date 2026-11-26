@@ -10,12 +10,16 @@ const {
   mockFindByToken,
   mockRevokeById,
   mockAssertApartmentOwnership,
+  mockResolveByToken,
+  mockListByReservation,
 } = vi.hoisted(() => ({
   mockResolveSubjectApartment: vi.fn(),
   mockCreate: vi.fn(),
   mockFindByToken: vi.fn(),
   mockRevokeById: vi.fn(),
   mockAssertApartmentOwnership: vi.fn(),
+  mockResolveByToken: vi.fn(),
+  mockListByReservation: vi.fn(),
 }));
 
 vi.mock("./special_access.service", () => ({
@@ -24,6 +28,8 @@ vi.mock("./special_access.service", () => ({
     create: mockCreate,
     findByToken: mockFindByToken,
     revokeById: mockRevokeById,
+    resolveByToken: mockResolveByToken,
+    listByReservation: mockListByReservation,
   },
 }));
 
@@ -286,5 +292,133 @@ describe("DELETE /special-access/{accessId}", () => {
 
     expect(res.status).toBe(403);
     expect(mockRevokeById).not.toHaveBeenCalled();
+  });
+});
+
+const liveGrant = {
+  id: "0a000000-0000-4000-8000-000000000000",
+  accessId: "good",
+  scope: "inspection_proof",
+  apartmentId: APARTMENT_ID,
+  reservationId: RESERVATION_ID,
+  incidentItemId: null,
+  expiresAt: new Date("2026-12-01T00:00:00.000Z"),
+  revokedAt: null,
+  usedAt: null,
+  createdAt: new Date("2026-11-26T00:00:00.000Z"),
+};
+
+describe("GET /special-access/{accessId}", () => {
+  it("returns the scope and targets for a live link, and NOT the row id", async () => {
+    mockResolveByToken.mockResolvedValue(liveGrant);
+
+    const res = await testApp.request("/special-access/good");
+
+    expect(res.status).toBe(200);
+
+    const body: Record<string, unknown> = await res.json();
+    expect(body).toMatchObject({
+      scope: "inspection_proof",
+      apartmentId: APARTMENT_ID,
+      reservationId: RESERVATION_ID,
+      expiresAt: "2026-12-01T00:00:00.000Z",
+    });
+    // The narrowing is the point of D21, so it is asserted, not assumed.
+    expect(body.id).toBeUndefined();
+    expect(body.accessId).toBeUndefined();
+    expect(body.revokedAt).toBeUndefined();
+    expect(body.usedAt).toBeUndefined();
+  });
+
+  it("answers without any session at all", async () => {
+    mockResolveByToken.mockResolvedValue(liveGrant);
+
+    // No Authorization header: this is the frontend route guard's call.
+    const res = await testApp.request("/special-access/good");
+
+    expect(res.status).toBe(200);
+  });
+
+  it("403s an unusable link with one code, whether unknown, expired or revoked", async () => {
+    mockResolveByToken.mockResolvedValue(null);
+
+    const res = await testApp.request("/special-access/deadbeef");
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.code).toBe("SPECIAL_ACCESS_INVALID");
+  });
+});
+
+describe("GET /special-access", () => {
+  const listableGrant = {
+    ...liveGrant,
+    revokedAt: new Date("2026-11-26T12:00:00.000Z"),
+  };
+
+  it("lists a reservation's links, INCLUDING a revoked one, carrying accessId", async () => {
+    mockResolveSubjectApartment.mockResolvedValue({
+      apartmentId: APARTMENT_ID,
+      reservationId: RESERVATION_ID,
+      incidentItemId: null,
+    });
+    mockListByReservation.mockResolvedValue([listableGrant]);
+
+    const res = await testApp.request(
+      `/special-access?reservationId=${RESERVATION_ID}`,
+      { headers: { Authorization: MOCK_JWT } },
+    );
+
+    expect(res.status).toBe(200);
+
+    const body: Array<Record<string, unknown>> = await res.json();
+    expect(body).toHaveLength(1);
+    expect(body[0]!.accessId).toBe("good");
+    expect(body[0]!.revokedAt).not.toBeNull();
+  });
+
+  it("401s without a session", async () => {
+    const res = await testApp.request(
+      `/special-access?reservationId=${RESERVATION_ID}`,
+    );
+
+    expect(res.status).toBe(401);
+  });
+
+  it("400s when reservationId is absent", async () => {
+    const res = await testApp.request("/special-access", {
+      headers: { Authorization: MOCK_JWT },
+    });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("404s in the reservation module's vocabulary when the reservation is unknown", async () => {
+    mockResolveSubjectApartment.mockResolvedValue(null);
+
+    const res = await testApp.request(
+      `/special-access?reservationId=${RESERVATION_ID}`,
+      { headers: { Authorization: MOCK_JWT } },
+    );
+
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("RESERVATION_NOT_FOUND");
+  });
+
+  it("refuses a reservation the caller does not own", async () => {
+    mockResolveSubjectApartment.mockResolvedValue({
+      apartmentId: APARTMENT_ID,
+      reservationId: RESERVATION_ID,
+      incidentItemId: null,
+    });
+    mockAssertApartmentOwnership.mockRejectedValue(forbidden());
+
+    const res = await testApp.request(
+      `/special-access?reservationId=${RESERVATION_ID}`,
+      { headers: { Authorization: MOCK_JWT } },
+    );
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.code).toBe("FORBIDDEN_APARTMENT_ACCESS");
   });
 });

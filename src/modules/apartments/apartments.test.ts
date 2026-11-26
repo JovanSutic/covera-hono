@@ -13,6 +13,7 @@ const {
   mockSyncUploadedPhotos,
   mockGetByOwnerId,
   mockCheckExistence,
+  mockAssertApartmentOwnership,
 } = vi.hoisted(() => {
   return {
     mockGetAll: vi.fn(),
@@ -22,6 +23,7 @@ const {
     mockSyncUploadedPhotos: vi.fn(),
     mockCheckExistence: vi.fn(),
     mockGetByOwnerId: vi.fn(),
+    mockAssertApartmentOwnership: vi.fn(),
   };
 });
 
@@ -48,6 +50,26 @@ const mockedUserService = usersService as unknown as {
 
 vi.mock("@/core/utils/db-validator", () => ({
   checkExistence: (...args: unknown[]) => mockCheckExistence(...args),
+  assertApartmentOwnership: (...args: unknown[]) =>
+    mockAssertApartmentOwnership(...args),
+}));
+
+const {
+  mockResolveByToken,
+  mockResolveApartmentOwner,
+  mockResolveIncidentReservation,
+} = vi.hoisted(() => ({
+  mockResolveByToken: vi.fn(),
+  mockResolveApartmentOwner: vi.fn(),
+  mockResolveIncidentReservation: vi.fn(),
+}));
+
+vi.mock("../special_access/special_access.service", () => ({
+  specialAccessService: {
+    resolveByToken: mockResolveByToken,
+    resolveApartmentOwner: mockResolveApartmentOwner,
+    resolveIncidentReservation: mockResolveIncidentReservation,
+  },
 }));
 
 const mockGetUser = vi.fn();
@@ -106,6 +128,7 @@ const setupSuccessfulGuards = (
     role,
     status: "confirmed",
   });
+  mockAssertApartmentOwnership.mockResolvedValue(undefined);
 };
 
 describe("Apartments routes", () => {
@@ -381,5 +404,65 @@ describe("Apartments routes", () => {
     expect(body.error.code).toBe("AUTH_SESSION_EXPIRED");
 
     expect(mockGetByOwnerId).not.toHaveBeenCalled();
+  });
+});
+
+describe("guest access via ?accessId= on the photo chain", () => {
+  const GRANT = {
+    scope: "inspection_proof",
+    apartmentId: VALID_UUID,
+    reservationId: "770e8400-e29b-41d4-a716-446655440000",
+  };
+
+  const owner = {
+    id: VALID_UUID,
+    authId: VALID_UUID,
+    role: "host",
+    status: "confirmed",
+  };
+
+  it("lets a link-holder mint upload tokens, without re-asserting ownership", async () => {
+    mockResolveByToken.mockResolvedValue(GRANT);
+    mockResolveApartmentOwner.mockResolvedValue(owner);
+    mockGenerateUploadTokens.mockResolvedValue([
+      { uploadUrl: "https://example.com", key: "apartments/id/a.jpg" },
+    ]);
+
+    const res = await testApp.request(
+      `/apartments/${VALID_UUID}/photos/upload-tokens?accessId=good`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileTypes: ["image/jpeg"] }),
+      },
+    );
+
+    expect(res.status).toBe(200);
+    // The guard already established the grant's apartment; the handler must not
+    // spend a second read re-deriving it.
+    expect(mockAssertApartmentOwnership).not.toHaveBeenCalled();
+  });
+
+  it("still asserts ownership on the SESSION path, with admin refused", async () => {
+    setupSuccessfulGuards("admin");
+    mockResolveApartmentOwner.mockResolvedValue(owner);
+    mockGetById.mockResolvedValue({ id: VALID_UUID, owner: VALID_UUID });
+    mockGenerateUploadTokens.mockResolvedValue([]);
+
+    const res = await testApp.request(
+      `/apartments/${VALID_UUID}/photos/upload-tokens`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: MOCK_JWT },
+        body: JSON.stringify({ fileTypes: ["image/jpeg"] }),
+      },
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockAssertApartmentOwnership).toHaveBeenCalledWith(
+      expect.anything(),
+      VALID_UUID,
+      expect.objectContaining({ allowAdmin: false }),
+    );
   });
 });
